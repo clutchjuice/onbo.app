@@ -20,7 +20,10 @@ const UserGreetText = () => {
           .single();
 
         if (!error && profile) {
-          setUserData(profile);
+          setUserData({
+            firstName: profile.first_name,
+            lastName: profile.last_name
+          });
         } else {
           console.error('Error fetching user profile:', error);
         }
@@ -34,8 +37,8 @@ const UserGreetText = () => {
       <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
         hello&nbsp;
         <code className="font-mono font-bold">
-          {userData.first_name && userData.last_name 
-            ? `${userData.first_name} ${userData.last_name}`
+          {userData.firstName && userData.lastName 
+            ? `${userData.firstName} ${userData.lastName}`
             : "user"}!
         </code>
       </p>
