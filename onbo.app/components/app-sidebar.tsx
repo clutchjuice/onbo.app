@@ -25,23 +25,6 @@ import {
 
 // This is sample data.
 const data = {
-  teams: [
-    {
-      name: "Acme Inc",
-      logo: Workflow,
-      plan: "Enterprise",
-    },
-    {
-      name: "Acme Corp.",
-      logo: Users,
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: BarChart3,
-      plan: "Free",
-    },
-  ],
   navMain: [
     {
       title: "Workflows",
@@ -97,7 +80,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <TeamSwitcher />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />

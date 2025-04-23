@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from "react"
 import { createClient } from "@/utils/supabase/client"
 import { useRouter } from "next/navigation"
+import { Skeleton } from "@/components/ui/skeleton"
 
 import {
   Avatar,
@@ -37,6 +38,7 @@ export function NavUser() {
   const { isMobile } = useSidebar()
   const router = useRouter()
   const supabase = createClient()
+  const [isLoading, setIsLoading] = useState(true)
   const [userData, setUserData] = useState<{
     firstName: string;
     lastName: string;
@@ -45,24 +47,37 @@ export function NavUser() {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        const { data: profile, error } = await supabase
-          .from('users')
-          .select('first_name, last_name')
-          .eq('id', user.id)
-          .single()
+      try {
+        // Get cached data first if available
+        const cachedData = sessionStorage.getItem('user_profile')
+        if (cachedData) {
+          setUserData(JSON.parse(cachedData))
+          setIsLoading(false)
+          return
+        }
 
-        if (!error && profile) {
-          setUserData({
+        // Combine both queries into a single request using Promise.all
+        const [{ data: { user } }, { data: profile, error }] = await Promise.all([
+          supabase.auth.getUser(),
+          supabase.from('users').select('first_name, last_name').single()
+        ])
+        
+        if (user && profile && !error) {
+          const userData = {
             firstName: profile.first_name,
             lastName: profile.last_name,
             email: user.email || ''
-          })
-        } else {
+          }
+          setUserData(userData)
+          // Cache the result
+          sessionStorage.setItem('user_profile', JSON.stringify(userData))
+        } else if (error) {
           console.error('Error fetching user profile:', error)
         }
+      } catch (error) {
+        console.error('Error fetching user data:', error)
+      } finally {
+        setIsLoading(false)
       }
     }
     fetchUser()
@@ -71,8 +86,26 @@ export function NavUser() {
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut()
     if (!error) {
+      // Clear cache on logout
+      sessionStorage.removeItem('user_profile')
       router.push('/login')
     }
+  }
+
+  if (isLoading) {
+    return (
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg">
+            <Skeleton className="h-8 w-8 rounded-lg" />
+            <div className="grid flex-1 gap-1">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-3 w-32" />
+            </div>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    )
   }
 
   if (!userData) return null

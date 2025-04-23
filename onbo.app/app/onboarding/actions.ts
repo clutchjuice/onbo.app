@@ -20,7 +20,36 @@ export async function submitOnboarding(formData: OnboardingData) {
     
     if (!user || userError) throw new Error('Authentication required')
 
-    // First update the user's onboarding data
+    // Start a transaction by using a consistent timestamp
+    const now = new Date().toISOString()
+
+    // First create the workspace
+    const { data: workspace, error: workspaceError } = await supabase
+      .from('workspaces')
+      .insert({
+        name: formData.organization_name,
+        created_at: now,
+        updated_at: now,
+        owner_id: user.id
+      })
+      .select()
+      .single()
+
+    if (workspaceError) throw workspaceError
+
+    // Then create the workspace member record for the owner
+    const { error: memberError } = await supabase
+      .from('workspace_members')
+      .insert({
+        workspace_id: workspace.id,
+        user_id: user.id,
+        role: 'owner',
+        joined_at: now
+      })
+
+    if (memberError) throw memberError
+
+    // Then update the user's profile with onboarding data and workspace
     const { error: userUpdateError } = await supabase
       .from('users')
       .update({
@@ -28,60 +57,15 @@ export async function submitOnboarding(formData: OnboardingData) {
         custom_niche: formData.niche === 'other' ? formData.customNiche : null,
         referral_source: formData.referral_source === 'other' ? null : formData.referral_source,
         custom_referral_source: formData.referral_source === 'other' ? formData.customReferralSource : null,
-        organization_name: formData.organization_name,
         organization_size: formData.organization_size,
         use_case: formData.use_case,
-        onboarding_completed: true
+        onboarding_completed: true,
+        workspaces: [workspace.id],
+        active_workspace: workspace.id
       })
       .eq('id', user.id)
 
     if (userUpdateError) throw userUpdateError
-
-    // Then create the workspace
-    const { data: workspace, error: workspaceError } = await supabase
-      .from('workspaces')
-      .insert({
-        name: formData.organization_name,
-        owner_id: user.id,
-        settings: {
-          created_at: new Date().toISOString(),
-          created_by: user.id
-        }
-      })
-      .select()
-      .single()
-
-    if (workspaceError) throw workspaceError
-
-    // Finally, create the workspace member record
-    const { error: memberError } = await supabase
-      .from('workspace_members')
-      .insert({
-        workspace_id: workspace.id,
-        user_id: user.id,
-        role: 'owner'
-      })
-
-    if (memberError) throw memberError
-
-    // Get current user's workspaces
-    const { data: currentUserData, error: fetchWorkspacesError } = await supabase
-      .from('users')
-      .select('workspaces')
-      .eq('id', user.id)
-      .single()
-
-    if (fetchWorkspacesError) throw fetchWorkspacesError
-
-    // Update the user's workspaces array
-    const { error: workspacesUpdateError } = await supabase
-      .from('users')
-      .update({
-        workspaces: [...(currentUserData?.workspaces || []), workspace.id]
-      })
-      .eq('id', user.id)
-
-    if (workspacesUpdateError) throw workspacesUpdateError
 
     revalidatePath('/dashboard')
     return { success: true }
