@@ -37,6 +37,7 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  // If no user and trying to access protected routes, redirect to login
   if (
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
@@ -44,10 +45,39 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/signup') &&
     request.nextUrl.pathname !== '/'
   ) {
-    // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
+  }
+
+  // If user exists and not on auth pages, check workspace status
+  if (
+    user &&
+    !request.nextUrl.pathname.startsWith('/login') &&
+    !request.nextUrl.pathname.startsWith('/auth') &&
+    !request.nextUrl.pathname.startsWith('/signup')
+  ) {
+    // Get user's workspaces
+    const { data: userData } = await supabase
+      .from('users')
+      .select('workspaces')
+      .eq('id', user.id)
+      .single()
+
+    // If no workspaces and not on onboarding page, redirect to onboarding
+    if (
+      (!userData?.workspaces || userData.workspaces.length === 0) &&
+      !request.nextUrl.pathname.startsWith('/onboarding')
+    ) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      const response = NextResponse.redirect(url)
+      // Copy cookies from supabaseResponse to the new response
+      supabaseResponse.cookies.getAll().forEach(cookie => {
+        response.cookies.set(cookie.name, cookie.value, cookie)
+      })
+      return response
+    }
   }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is.

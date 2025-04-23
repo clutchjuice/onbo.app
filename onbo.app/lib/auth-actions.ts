@@ -92,10 +92,16 @@ export async function signout() {
 
 export async function signInWithGoogle() {
   const supabase = await createClient();
+  
+  // Get the current origin for the redirect URL
+  const origin = process.env.NEXT_PUBLIC_SITE_URL || 
+                 process.env.NEXT_PUBLIC_VERCEL_URL || 
+                 'http://localhost:3000';
+  
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: 'http://localhost:3000/auth/callback',
+      redirectTo: `${origin}/auth/callback`,
       queryParams: {
         access_type: "offline",
         prompt: "consent",

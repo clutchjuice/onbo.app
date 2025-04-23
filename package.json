@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.4",
+    "framer-motion": "^12.7.4",
+    "lucide-react": "^0.503.0",
+    "sonner": "^2.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "@types/react": "^19.1.2"
+  }
+}
