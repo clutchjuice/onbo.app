@@ -1,3 +1,5 @@
+'use client';
+
 import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,9 +16,93 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { Plus } from "lucide-react"
+import { Loader2, Plus } from "lucide-react"
+import { createClient } from '@/utils/supabase/client'
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+
+interface Workflow {
+  id: string
+  name: string
+  description: string
+  created_at: string
+  updated_at: string
+  steps: any[]
+  connections: any[]
+}
 
 export default function WorkflowsPage() {
+  const [workflows, setWorkflows] = useState<Workflow[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const supabase = createClient()
+  const router = useRouter()
+
+  useEffect(() => {
+    async function loadWorkflows() {
+      try {
+        // Get the user's current workspace
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        
+        if (userError || !user) {
+          toast.error('Please sign in to view workflows')
+          router.push('/login')
+          return
+        }
+
+        // Get user's active workspace
+        const { data: userData, error: userDataError } = await supabase
+          .from('users')
+          .select('active_workspace')
+          .eq('id', user.id)
+          .single()
+
+        if (userDataError || !userData?.active_workspace) {
+          toast.error('No active workspace found. Please create or select a workspace first.')
+          router.push('/workspaces')
+          return
+        }
+
+        // Check if user is a member of the workspace
+        const { data: membership, error: membershipError } = await supabase
+          .from('workspace_members')
+          .select('role')
+          .eq('workspace_id', userData.active_workspace)
+          .eq('user_id', user.id)
+          .single()
+
+        if (membershipError || !membership) {
+          toast.error('You do not have access to this workspace')
+          router.push('/dashboard')
+          return
+        }
+
+        // Get workflows for the workspace
+        const { data: workflowData, error: workflowError } = await supabase
+          .from('workflows')
+          .select('*')
+          .eq('workspace_id', userData.active_workspace)
+          .order('created_at', { ascending: false })
+
+        if (workflowError) {
+          console.error('Error loading workflows:', workflowError)
+          toast.error('Failed to load workflows')
+          return
+        }
+
+        setWorkflows(workflowData || [])
+      } catch (error) {
+        console.error('Error:', error)
+        toast.error('An unexpected error occurred')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadWorkflows()
+  }, [supabase, router])
+
   return (
     <SidebarProvider>
       <AppSidebar className="hidden lg:flex" />
@@ -45,45 +131,39 @@ export default function WorkflowsPage() {
                 Create and manage your onboarding workflows
               </p>
             </div>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Workflow
-            </Button>
+            <Link href="/workflows/new">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                New Workflow
+              </Button>
+            </Link>
           </div>
           <div className="grid gap-6 pt-8 md:grid-cols-2 lg:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle>New Employee</CardTitle>
-                <CardDescription>Standard onboarding process for new employees</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm text-muted-foreground">
-                  <p>12 tasks • 5-7 days</p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Engineering</CardTitle>
-                <CardDescription>Technical onboarding for engineering team</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm text-muted-foreground">
-                  <p>15 tasks • 3-5 days</p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Sales</CardTitle>
-                <CardDescription>Sales team onboarding and training</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm text-muted-foreground">
-                  <p>10 tasks • 4-6 days</p>
-                </div>
-              </CardContent>
-            </Card>
+            {isLoading ? (
+              <div className="col-span-full flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : workflows.length === 0 ? (
+              <div className="col-span-full text-center py-8">
+                <p className="text-muted-foreground">No workflows found. Create your first workflow to get started.</p>
+              </div>
+            ) : (
+              workflows.map((workflow) => (
+                <Link key={workflow.id} href={`/workflows/${workflow.id}`}>
+                  <Card className="cursor-pointer hover:shadow-lg transition-all duration-300 ease-in-out transform hover:-translate-y-1">
+                    <CardHeader>
+                      <CardTitle>{workflow.name}</CardTitle>
+                      <CardDescription>{workflow.description}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground">
+                        <p>{workflow.steps.length} tasks • Last updated {new Date(workflow.updated_at).toLocaleDateString()}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))
+            )}
           </div>
         </div>
       </SidebarInset>

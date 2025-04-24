@@ -1,10 +1,89 @@
 'use client';
 
 import { Card } from "@/components/ui/card";
-import { ArrowRight, Wand2, FileCode, Layout, ArrowLeft } from "lucide-react";
+import { ArrowRight, Wand2, FileCode, Layout, ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { createClient } from '@/utils/supabase/client';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 export default function NewWorkflow() {
+  const router = useRouter();
+  const supabase = createClient();
+  const [isCreating, setIsCreating] = useState(false);
+
+  const createWorkflow = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
+
+    try {
+      // Get the user's current workspace
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        toast.error('Please sign in to create a workflow');
+        router.push('/login');
+        return;
+      }
+
+      // Get user's active workspace
+      const { data: userData, error: userDataError } = await supabase
+        .from('users')
+        .select('active_workspace')
+        .eq('id', user.id)
+        .single();
+
+      if (userDataError) {
+        console.error('Error fetching workspace data:', userDataError);
+        toast.error('Failed to access your workspace. Please try again.');
+        return;
+      }
+      
+      if (!userData?.active_workspace) {
+        toast.error('No active workspace found. Please create or select a workspace first.');
+        router.push('/workspaces');  // Redirect to workspace selection
+        return;
+      }
+
+      // Create the workflow
+      const { data: workflow, error: workflowError } = await supabase
+        .from('workflows')
+        .insert({
+          workspace_id: userData.active_workspace,
+          name: 'Untitled Workflow',
+          description: 'A new workflow',
+          user_id: user.id,
+          steps: [],
+          connections: [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (workflowError) {
+        console.error('Error creating workflow:', workflowError);
+        toast.error('Failed to create workflow');
+        return;
+      }
+
+      if (!workflow) {
+        toast.error('Failed to create workflow');
+        return;
+      }
+
+      // Redirect to the workflow builder
+      router.push(`/workflows/${workflow.id}`);
+    } catch (error) {
+      console.error('Error:', error);
+      toast.error('An unexpected error occurred');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
@@ -21,11 +100,22 @@ export default function NewWorkflow() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Create from scratch */}
-          <Link href="/workflows/editor/new">
+          <button 
+            onClick={createWorkflow} 
+            disabled={isCreating}
+            className="text-left"
+          >
             <Card className="p-6 hover:shadow-lg transition-all duration-300 ease-in-out transform hover:-translate-y-1 cursor-pointer h-full">
               <div className="flex flex-col h-full">
                 <div className="mb-4">
-                  <Layout className="w-12 h-12 text-primary" />
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="w-12 h-12 text-primary animate-spin" />
+                      <span className="text-sm text-muted-foreground mt-2">Setting up your workflow...</span>
+                    </>
+                  ) : (
+                    <Layout className="w-12 h-12 text-primary" />
+                  )}
                 </div>
                 <h2 className="text-xl font-semibold mb-2">Create from scratch</h2>
                 <p className="text-muted-foreground text-sm flex-grow">
@@ -37,7 +127,7 @@ export default function NewWorkflow() {
                 </div>
               </div>
             </Card>
-          </Link>
+          </button>
 
           {/* Create with AI */}
           <Link href="/workflows/ai/new">
