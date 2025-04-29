@@ -11,7 +11,7 @@ export type TaskNodeData = {
 function TaskNode({ data }: { data: TaskNodeData }) {
   return (
     <Card className="min-w-[200px]">
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Left} />
       <CardHeader>
         <CardTitle className="text-sm">{data.label}</CardTitle>
       </CardHeader>
@@ -20,7 +20,7 @@ function TaskNode({ data }: { data: TaskNodeData }) {
           <p className="text-xs text-muted-foreground">{data.description}</p>
         </CardContent>
       )}
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Right} />
     </Card>
   );
 }

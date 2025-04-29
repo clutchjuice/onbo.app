@@ -7,6 +7,10 @@ type State = {
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
+  showStepPicker: boolean;
+  insertIndex: number | null;
+  setShowStepPicker: (show: boolean) => void;
+  setInsertIndex: (index: number | null) => void;
 };
 
 export const useWorkflowStore = create<State>((set, get) => ({
@@ -22,9 +26,13 @@ export const useWorkflowStore = create<State>((set, get) => ({
       edges: applyEdgeChanges(changes, get().edges),
     });
   },
-  onConnect: (connection: Connection) => {
+  onConnect: (connection) => {
     set({
       edges: addEdge(connection, get().edges),
     });
   },
+  showStepPicker: false,
+  insertIndex: null,
+  setShowStepPicker: (show) => set({ showStepPicker: show }),
+  setInsertIndex: (index) => set({ insertIndex: index }),
 })); 
