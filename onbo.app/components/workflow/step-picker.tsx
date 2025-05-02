@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Type, Video, FormInput } from 'lucide-react';
+import { Plus, Type, Video, FormInput, Upload, Signature, Calendar, FileText, MessageSquare } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
 interface StepTemplate {
@@ -46,6 +46,16 @@ export function StepPicker({ onStepSelect }: StepPickerProps) {
         return <Video className="w-6 h-6" />;
       case 'FormInput':
         return <FormInput className="w-6 h-6" />;
+      case 'upload':
+        return <Upload className="w-6 h-6" />;
+      case 'signature':
+        return <Signature className="w-6 h-6" />;
+      case 'calendar':
+        return <Calendar className="w-6 h-6" />;
+      case 'file-text':
+        return <FileText className="w-6 h-6" />;
+      case 'survey':
+        return <MessageSquare className="w-6 h-6" />;
       default:
         return <Plus className="w-6 h-6" />;
     }

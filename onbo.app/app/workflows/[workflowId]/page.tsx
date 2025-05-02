@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -8,11 +8,12 @@ import ReactFlow, {
   Panel,
   ReactFlowInstance,
   Edge,
+  Node,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useWorkflowStore } from '@/lib/stores/workflow-store';
 import { createClient } from '@/utils/supabase/client';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Eye, Pencil, Save, Upload, Plus } from 'lucide-react';
 import Link from 'next/link';
@@ -20,10 +21,11 @@ import { nodeTypes } from '@/components/workflow/node-types';
 import { edgeTypes } from '@/components/workflow/edge-types';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/app/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { StepPicker } from '@/app/components/workflow/step-picker';
+import { StepPicker } from '@/components/workflow/step-picker';
 import { PlusButton } from '@/components/workflow/plus-button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 function EmptyWorkflowState() {
   return (
@@ -32,15 +34,9 @@ function EmptyWorkflowState() {
         <PlusButton 
           size="lg"
           onClick={() => {
-            const workflow = useWorkflowStore.getState();
-            const newNode = {
-              id: crypto.randomUUID(),
-              type: 'action',
-              position: { x: 0, y: 0 },
-              data: { label: 'New Action' }
-            };
             useWorkflowStore.setState({
-              nodes: [...(workflow.nodes || []), newNode]
+              showStepPicker: true,
+              insertIndex: 0
             });
           }}
         />
@@ -54,6 +50,7 @@ function EmptyWorkflowState() {
 
 export default function WorkflowBuilder() {
   const params = useParams();
+  const router = useRouter();
   const supabase = createClient();
   const { 
     nodes, 
@@ -63,17 +60,51 @@ export default function WorkflowBuilder() {
     showStepPicker,
     setShowStepPicker,
     insertIndex,
-    setInsertIndex
+    setInsertIndex,
+    selectedNodeId,
+    setSelectedNodeId,
+    hasUnsavedChanges,
+    markChangesSaved
   } = useWorkflowStore();
   const [workflowTitle, setWorkflowTitle] = useState('');
   const [workflowStatus, setWorkflowStatus] = useState<'draft' | 'published'>('draft');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<ReactFlowInstance | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  // Handle browser back/forward/close
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // Handle Next.js client-side navigation
+  const handleNavigation = useCallback((href: string) => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation(href);
+      setShowUnsavedChangesDialog(true);
+    } else {
+      router.push(href);
+    }
+  }, [hasUnsavedChanges, router]);
 
   const loadWorkflow = useCallback(async () => {
+    setIsLoading(true);
     try {
+      // Reset the store to initial state before loading new data
+      useWorkflowStore.getState().reset();
+      
       const { data: workflow, error } = await supabase
         .from('workflows')
         .select('*')
@@ -95,10 +126,11 @@ export default function WorkflowBuilder() {
         data: { onAdd: () => handleAddClick(index + 1) }
       }));
       
-      useWorkflowStore.setState({
-        nodes: workflow.steps || [],
-        edges: edgesWithData,
-      });
+      // Initialize workflow with a single state update
+      useWorkflowStore.getState().initializeWorkflow(
+        workflow.steps || [],
+        edgesWithData
+      );
       
       // Center view after nodes are loaded
       setTimeout(() => {
@@ -107,6 +139,8 @@ export default function WorkflowBuilder() {
     } catch (error) {
       console.error('Error:', error);
       toast.error('An unexpected error occurred');
+    } finally {
+      setIsLoading(false);
     }
   }, [params.workflowId, supabase]);
 
@@ -177,12 +211,13 @@ export default function WorkflowBuilder() {
         return;
       }
 
+      markChangesSaved();
       toast.success('Workflow saved successfully');
     } catch (error) {
       console.error('Error:', error);
       toast.error('An unexpected error occurred');
     }
-  }, [nodes, edges, params.workflowId, supabase]);
+  }, [nodes, edges, params.workflowId, supabase, markChangesSaved]);
 
   const publishWorkflow = useCallback(async () => {
     try {
@@ -217,7 +252,8 @@ export default function WorkflowBuilder() {
       draggable: false,
       data: {
         ...template.default_config,
-        templateId: template.id
+        templateId: template.id,
+        ...(template.type === 'scheduling' ? { embedCode: '' } : {})
       }
     };
 
@@ -293,10 +329,18 @@ export default function WorkflowBuilder() {
         });
       }
 
+      // First update nodes and edges
       useWorkflowStore.setState({
         nodes: nodesWithNew,
         edges: newEdges,
       });
+
+      // Then update selection in a separate call to ensure nodes are updated first
+      setTimeout(() => {
+        useWorkflowStore.setState({
+          selectedNodeId: newNode.id
+        });
+      }, 0);
     } else {
       // Add to the end (existing behavior)
       const lastNode = existingNodes[existingNodes.length - 1];
@@ -311,6 +355,7 @@ export default function WorkflowBuilder() {
           type: 'custom',
           data: { onAdd: () => handleAddClick(nodes.length) }
         };
+        // First update nodes and edges
         useWorkflowStore.setState({
           nodes: [...nodes, newNode],
           edges: [...edges.map(edge => ({
@@ -319,10 +364,25 @@ export default function WorkflowBuilder() {
             data: { onAdd: () => handleAddClick(edges.indexOf(edge) + 1) }
           })), newEdge],
         });
+
+        // Then update selection in a separate call
+        setTimeout(() => {
+          useWorkflowStore.setState({
+            selectedNodeId: newNode.id
+          });
+        }, 0);
       } else {
+        // First update nodes
         useWorkflowStore.setState({
           nodes: [newNode],
         });
+
+        // Then update selection in a separate call
+        setTimeout(() => {
+          useWorkflowStore.setState({
+            selectedNodeId: newNode.id
+          });
+        }, 0);
       }
     }
 
@@ -358,78 +418,120 @@ export default function WorkflowBuilder() {
   };
 
   // Find the selected node
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const selectedNode = useMemo(() => {
+    const node = nodes.find((n) => n.id === selectedNodeId);
+    return node;
+  }, [nodes, selectedNodeId]);
+
+  // Update onNodeClick to use store's setSelectedNodeId
+  const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setSelectedNodeId(node.id);
+  }, [setSelectedNodeId]);
 
   useEffect(() => {
     loadWorkflow();
   }, [loadWorkflow]);
 
   return (
-    <div className="h-screen w-full relative">
-      <div className="fixed top-0 left-0 right-0 z-10 flex items-center justify-between p-4 bg-background/95 backdrop-blur-lg border-b">
-        <Link
-          href="/workflows"
-          className="inline-flex items-center text-muted-foreground hover:text-primary transition-colors duration-200"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1 transition-transform duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]" />
-          <span className="transition-opacity duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]">Back to workflows</span>
-        </Link>
-        <div className="absolute left-1/2 -translate-x-1/2 font-semibold flex items-center gap-2 group cursor-pointer transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]">
+    <div className="h-screen flex flex-col">
+      <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex h-16 items-center px-4">
+          <button 
+            onClick={() => handleNavigation('/workflows')} 
+            className="flex items-center gap-2 text-sm font-medium hover:text-foreground/70 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Workflows
+          </button>
+          <div className="flex-1 flex items-center justify-center gap-2">
+            <Badge 
+              variant="outline"
+              className={cn(
+                workflowStatus === 'published' 
+                  ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-900" 
+                  : "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-900"
+              )}
+            >
+              {workflowStatus === 'published' ? 'Published' : 'Draft'}
+            </Badge>
           {isEditingTitle ? (
             <Input
               ref={titleInputRef}
               defaultValue={workflowTitle}
-              className="h-7 w-[200px] text-center font-semibold bg-transparent"
+                className="h-8 w-[300px] text-base font-semibold"
               onBlur={handleTitleSubmit}
               onKeyDown={handleTitleKeyDown}
             />
           ) : (
-            <>
-              <span>{workflowTitle}</span>
-              <Pencil className="w-3.5 h-3.5 text-muted-foreground" onClick={() => setIsEditingTitle(true)} />
-              <Badge 
-                variant="outline" 
-                className={cn(
-                  "ml-2 capitalize",
-                  workflowStatus === 'published' ? "border-green-500 text-green-500" : "border-orange-500 text-orange-500"
-                )}
+              <button
+                onClick={() => setIsEditingTitle(true)}
+                className="flex items-center gap-2 hover:text-foreground/70 transition-colors"
               >
-                {workflowStatus}
-              </Badge>
-            </>
+                <h1 className="text-base font-semibold">{workflowTitle}</h1>
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
           )}
         </div>
-        <div className="flex items-center gap-2 transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]">
-          <Button variant="outline" size="sm" className="transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)] hover:scale-105 active:scale-95">
-            <Eye className="w-4 h-4 mr-1 transition-transform duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]" />
-            Preview
-          </Button>
-          <Button onClick={saveWorkflow} size="sm" className="transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)] hover:scale-105 active:scale-95">
-            <Save className="w-4 h-4 mr-1 transition-transform duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]" />
-            Save
-          </Button>
-          <Button 
-            onClick={publishWorkflow} 
-            variant="default" 
-            size="sm" 
-            className="transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)] hover:scale-105 active:scale-95"
-            disabled={workflowStatus === 'published'}
-          >
-            <Upload className="w-4 h-4 mr-1 transition-transform duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]" />
-            Publish
-          </Button>
+          <div className="flex items-center gap-2">
+            {!isLoading && (
+              <>
+                <Button 
+                  variant={hasUnsavedChanges ? "default" : "outline"} 
+                  size="sm" 
+                  onClick={saveWorkflow}
+                  className={cn(
+                    "hover:scale-105 transition-all duration-200",
+                    hasUnsavedChanges ? "shadow-[0_0_10px_rgba(0,0,0,0.1)] dark:shadow-[0_0_15px_rgba(255,255,255,0.1)]" : ""
+                  )}
+                >
+                  <Save className="h-4 w-4 mr-1" />
+                  Save
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="hover:scale-105 transition-all duration-200"
+                  onClick={() => handleNavigation(`/workflows/${params.workflowId}/preview`)}
+                >
+                  <Eye className="h-4 w-4 mr-1" />
+                  Preview
+                </Button>
+                <Button 
+                  variant={workflowStatus === 'published' ? "outline" : "default"} 
+                  size="sm" 
+                  onClick={publishWorkflow} 
+                  disabled={workflowStatus === 'published'}
+                  className="hover:scale-105 transition-all duration-200"
+                >
+                  <Upload className="h-4 w-4 mr-1" />
+                  {workflowStatus === 'published' ? 'Published' : 'Publish'}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
+      <div className="flex-1 flex">
+        <div className="flex-1 relative">
+          {nodes.length === 0 ? (
+            <EmptyWorkflowState />
+          ) : (
       <ReactFlow
+              onInit={instance => {
+                flowRef.current = instance;
+                instance.fitView({ padding: 0.2, includeHiddenNodes: true });
+              }}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+              onNodeClick={handleNodeClick}
+              onPaneClick={() => setSelectedNodeId(null)}
         fitView
         fitViewOptions={{ padding: 0.2, includeHiddenNodes: true }}
-        className="bg-muted/10"
+              className="bg-background"
         defaultEdgeOptions={{
           type: 'custom',
           animated: false,
@@ -438,58 +540,15 @@ export default function WorkflowBuilder() {
         nodesDraggable={false}
         preventScrolling={true}
         connectOnClick={false}
-        onInit={instance => {
-          flowRef.current = instance;
-          instance.fitView({ padding: 0.2, includeHiddenNodes: true });
-        }}
-        onNodeClick={(_, node) => setSelectedNodeId(node.id)}
       >
         <Background />
         <Controls />
         <MiniMap />
-        {nodes.length === 0 && (
-          <EmptyWorkflowState />
-        )}
-      </ReactFlow>
-      {showStepPicker && (
-        <>
-          <div 
-            className="fixed inset-0 bg-black/50 z-[9999]"
-            onClick={() => {
-              setShowStepPicker(false);
-              setInsertIndex(null);
-            }}
-          />
-          <div className="fixed inset-0 flex items-center justify-center z-[10000]">
-            <div className="bg-background p-4 rounded-lg shadow-lg border max-w-md w-full relative">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">Add Onboarding Step</h2>
-                <button 
-                  onClick={() => {
-                    setShowStepPicker(false);
-                    setInsertIndex(null);
-                  }}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"></path>
-                  </svg>
-                </button>
-              </div>
-              <StepPicker 
-                onStepSelect={(step) => {
-                  handleStepSelect(step);
-                  setShowStepPicker(false);
-                  setInsertIndex(null);
-                }}
-              />
-            </div>
+            </ReactFlow>
+          )}
           </div>
-        </>
-      )}
-      {/* Sidebar for step editor */}
       {selectedNode && (
-        <div className="fixed right-0 top-16 h-[calc(100vh-64px)] w-[350px] bg-white border-l shadow-lg z-50 flex flex-col">
+          <div className="w-[350px] border-l bg-background flex flex-col">
           <div className="flex items-center justify-between p-4 border-b">
             <div className="font-semibold text-lg">{selectedNode.data?.title || 'Step Settings'}</div>
             <button onClick={() => setSelectedNodeId(null)} className="text-muted-foreground hover:text-foreground">✕</button>
@@ -497,22 +556,324 @@ export default function WorkflowBuilder() {
           <div className="flex-1 overflow-y-auto p-4">
             {/* Example fields, can be expanded per node type */}
             <div className="mb-4">
-              <label className="block text-xs font-medium mb-1">Title</label>
+                <label className="block text-xs font-medium mb-1">Step Name</label>
               <input
                 className="w-full border rounded px-2 py-1"
                 value={selectedNode.data?.title || ''}
                 onChange={e => {
                   const newTitle = e.target.value;
                   useWorkflowStore.setState({
-                    nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, title: newTitle } } : n)
+                    nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, title: newTitle } } : n),
+                    hasUnsavedChanges: true
                   });
                 }}
               />
             </div>
-            {/* Add more fields here as needed */}
+              {/* Form-specific settings */}
+              {selectedNode.type === 'form' && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Description / Instructions</label>
+                    <textarea
+                      className="w-full border rounded px-2 py-1"
+                      value={selectedNode.data?.description || ''}
+                      onChange={e => {
+                        const newDescription = e.target.value;
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, description: newDescription } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Fields</label>
+                    <div className="space-y-3">
+                      {(selectedNode.data?.fields || []).map((field: any, idx: number) => (
+                        <div key={idx} className="p-2 border rounded bg-muted/20 flex flex-col gap-1">
+                          <div className="flex gap-2">
+                            <select
+                              className="border rounded px-2 py-1 text-xs w-1/2"
+                              value={field.type}
+                              onChange={e => {
+                                const newType = e.target.value;
+                                const newFields = [...selectedNode.data.fields];
+                                newFields[idx].type = newType;
+                                useWorkflowStore.setState({
+                                  nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
+                                  hasUnsavedChanges: true
+                                });
+                              }}
+                            >
+                              <option value="text">Single Line</option>
+                              <option value="textarea">Paragraph</option>
+                              <option value="number">Number</option>
+                              <option value="dropdown">Dropdown</option>
+                            </select>
+                            <button
+                              className="text-xs text-red-500 ml-auto px-2"
+                              onClick={() => {
+                                const newFields = [...selectedNode.data.fields];
+                                newFields.splice(idx, 1);
+                                useWorkflowStore.setState({
+                                  nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
+                                  hasUnsavedChanges: true
+                                });
+                              }}
+                              type="button"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <input
+                            className="border rounded px-2 py-1 text-xs w-full"
+                            placeholder="Label"
+                            value={field.label}
+                            onChange={e => {
+                              const newLabel = e.target.value;
+                              const newFields = [...selectedNode.data.fields];
+                              newFields[idx].label = newLabel;
+                              useWorkflowStore.setState({
+                                nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
+                                hasUnsavedChanges: true
+                              });
+                            }}
+                          />
+                          <input
+                            className="border rounded px-2 py-1 text-xs w-full"
+                            placeholder="Placeholder"
+                            value={field.placeholder}
+                            onChange={e => {
+                              const newPlaceholder = e.target.value;
+                              const newFields = [...selectedNode.data.fields];
+                              newFields[idx].placeholder = newPlaceholder;
+                              useWorkflowStore.setState({
+                                nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
+                                hasUnsavedChanges: true
+                              });
+                            }}
+                          />
+                          {field.type === 'dropdown' && (
+                            <input
+                              className="border rounded px-2 py-1 text-xs w-full"
+                              placeholder="Comma-separated options (e.g. Option 1, Option 2)"
+                              value={field.options || ''}
+                              onChange={e => {
+                                const newFields = [...selectedNode.data.fields];
+                                newFields[idx].options = e.target.value;
+                                useWorkflowStore.setState({
+                                  nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
+                                  hasUnsavedChanges: true
+                                });
+                              }}
+                            />
+                          )}
+                          <label className="flex items-center gap-2 text-xs mt-1">
+                            <input
+                              type="checkbox"
+                              checked={field.required}
+                              onChange={e => {
+                                const newFields = [...selectedNode.data.fields];
+                                newFields[idx].required = e.target.checked;
+                                useWorkflowStore.setState({
+                                  nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
+                                  hasUnsavedChanges: true
+                                });
+                              }}
+                            />
+                            Required
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      className="mt-2 px-2 py-1 border rounded text-xs bg-muted hover:bg-muted/50 w-full"
+                      type="button"
+                      onClick={() => {
+                        const newFields = [...(selectedNode.data?.fields || [])];
+                        newFields.push({ type: 'text', label: '', placeholder: '', required: false });
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    >
+                      + Add Field
+                    </button>
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Submit Button Text</label>
+                    <input
+                      className="w-full border rounded px-2 py-1"
+                      value={selectedNode.data?.submitLabel || 'Submit'}
+                      onChange={e => {
+                        const newLabel = e.target.value;
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, submitLabel: newLabel } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              {/* Text step settings */}
+              {selectedNode.type === 'text' && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Header</label>
+                    <input
+                      className="w-full border rounded px-2 py-1"
+                      value={selectedNode.data?.header || ''}
+                      onChange={e => {
+                        const newHeader = e.target.value;
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, header: newHeader } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Subheader <span className="text-muted-foreground">(optional)</span></label>
+                    <input
+                      className="w-full border rounded px-2 py-1"
+                      value={selectedNode.data?.subheader || ''}
+                      onChange={e => {
+                        const newSubheader = e.target.value;
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, subheader: newSubheader } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Body Text <span className="text-muted-foreground">(supports markdown, rich text, emojis)</span></label>
+                    <textarea
+                      className="w-full border rounded px-2 py-1 min-h-[80px]"
+                      value={selectedNode.data?.content || ''}
+                      onChange={e => {
+                        const newContent = e.target.value;
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, content: newContent } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Image <span className="text-muted-foreground">(optional, URL)</span></label>
+                    <input
+                      className="w-full border rounded px-2 py-1"
+                      placeholder="https://..."
+                      value={selectedNode.data?.image || ''}
+                      onChange={e => {
+                        const newImage = e.target.value;
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, image: newImage } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Alignment</label>
+                    <select
+                      className="w-full border rounded px-2 py-1"
+                      value={selectedNode.data?.align || 'left'}
+                      onChange={e => {
+                        const newAlign = e.target.value;
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, align: newAlign } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    >
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              {/* Scheduling step settings */}
+              {selectedNode.type === 'scheduling' && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-xs font-medium mb-1">Calendar Embed Code</label>
+                    <textarea
+                      className="w-full border rounded px-2 py-1 min-h-[200px] font-mono text-sm"
+                      value={selectedNode.data?.embedCode || ''}
+                      placeholder="*Paste your calendar embed code here (e.g. from Calendly)"
+                      onChange={e => {
+                        const newEmbedCode = e.target.value;
+                        useWorkflowStore.setState({
+                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, embedCode: newEmbedCode } } : n),
+                          hasUnsavedChanges: true
+                        });
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
+        )}
         </div>
+      {showStepPicker && (
+        <Dialog open={showStepPicker} onOpenChange={(open) => !open && setShowStepPicker(false)}>
+          <DialogContent className="sm:max-w-[500px]">
+            <StepPicker
+              onStepSelect={(template) => {
+                handleStepSelect(template);
+                setShowStepPicker(false);
+                setInsertIndex(null);
+              }}
+            />
+          </DialogContent>
+        </Dialog>
       )}
+      <Dialog open={showUnsavedChangesDialog} onOpenChange={setShowUnsavedChangesDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved Changes</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes. Are you sure you want to leave? Your changes will be lost.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUnsavedChangesDialog(false);
+                setPendingNavigation(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (pendingNavigation) {
+                  router.push(pendingNavigation);
+                }
+              }}
+            >
+              Leave Without Saving
+            </Button>
+            <Button
+              onClick={async () => {
+                await saveWorkflow();
+                if (pendingNavigation) {
+                  router.push(pendingNavigation);
+                }
+              }}
+            >
+              Save & Leave
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 
