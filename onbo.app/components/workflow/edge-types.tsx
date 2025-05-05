@@ -1,4 +1,4 @@
-import { BaseEdge, EdgeProps, getBezierPath } from 'reactflow';
+import { BaseEdge, EdgeProps, getStraightPath } from 'reactflow';
 import { Plus } from 'lucide-react';
 
 export function CustomEdge({
@@ -13,17 +13,23 @@ export function CustomEdge({
   markerEnd,
   data,
 }: EdgeProps) {
-  const [edgePath, centerX, centerY] = getBezierPath({
-    sourceX,
+  // Calculate the total distance between nodes
+  const distance = targetX - sourceX;
+  
+  // For connected edges, we want to extend them to 140px
+  // We'll adjust the source and target X coordinates to achieve this
+  const adjustedSourceX = sourceX + ((distance - 140) / 2);
+  const adjustedTargetX = targetX - ((distance - 140) / 2);
+
+  const [edgePath, centerX, centerY] = getStraightPath({
+    sourceX: adjustedSourceX,
     sourceY,
-    sourcePosition,
-    targetX,
+    targetX: adjustedTargetX,
     targetY,
-    targetPosition,
   });
 
   const handleAddClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent event from bubbling up to the edge
+    e.stopPropagation();
     if (data?.onAdd) {
       data.onAdd();
     }
@@ -44,7 +50,8 @@ export function CustomEdge({
           <div
             onClick={handleAddClick}
             className="w-8 h-8 rounded-full bg-background hover:bg-accent flex items-center justify-center 
-                     border-2 border-border shadow-sm hover:shadow transition-all group cursor-pointer"
+                     border-2 border-border shadow-sm hover:shadow transition-all group cursor-pointer
+                     hover:scale-110 hover:border-border/80"
           >
             <Plus className="w-4 h-4 text-foreground group-hover:scale-110 transition-transform" />
           </div>

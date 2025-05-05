@@ -1,5 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Plus, Type, Video, FormInput, Upload, Signature, Calendar, FileText, MessageSquare } from 'lucide-react';
+import {
+  Plus,
+  Type,
+  Video,
+  FormInput,
+  Signature,
+  Calendar,
+  FileText,
+  MessageSquare,
+  CreditCard
+} from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
 interface StepTemplate {
@@ -14,6 +24,38 @@ interface StepTemplate {
 interface StepPickerProps {
   onStepSelect: (template: StepTemplate) => void;
 }
+
+// Color mapping for different step types - all using the same blue color
+const iconColorMap: Record<string, { color: string; bgColor: string }> = {
+  text: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  video: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  form: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  contract_esign: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  scheduling: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  document_embed: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  payment: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  }
+};
 
 export function StepPicker({ onStepSelect }: StepPickerProps) {
   const [templates, setTemplates] = useState<StepTemplate[]>([]);
@@ -38,26 +80,43 @@ export function StepPicker({ onStepSelect }: StepPickerProps) {
     setTemplates(data || []);
   };
 
-  const getStepIcon = (iconName: string) => {
+  const getStepIcon = (iconName: string, type: string) => {
+    const colors = iconColorMap[type] || { color: '#1260cc', bgColor: '#1260cc10' };
+    const iconStyle = {
+      width: '24px',
+      height: '24px',
+      color: colors.color
+    };
+
+    const containerStyle = {
+      width: '48px',
+      height: '48px',
+      backgroundColor: colors.bgColor,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '12px'
+    };
+
     switch (iconName) {
       case 'Type':
-        return <Type className="w-6 h-6" />;
+        return <div style={containerStyle}><Type style={iconStyle} /></div>;
       case 'Video':
-        return <Video className="w-6 h-6" />;
+        return <div style={containerStyle}><Video style={iconStyle} /></div>;
       case 'FormInput':
-        return <FormInput className="w-6 h-6" />;
-      case 'upload':
-        return <Upload className="w-6 h-6" />;
+        return <div style={containerStyle}><FormInput style={iconStyle} /></div>;
       case 'signature':
-        return <Signature className="w-6 h-6" />;
+        return <div style={containerStyle}><Signature style={iconStyle} /></div>;
       case 'calendar':
-        return <Calendar className="w-6 h-6" />;
+        return <div style={containerStyle}><Calendar style={iconStyle} /></div>;
       case 'file-text':
-        return <FileText className="w-6 h-6" />;
+        return <div style={containerStyle}><FileText style={iconStyle} /></div>;
       case 'survey':
-        return <MessageSquare className="w-6 h-6" />;
+        return <div style={containerStyle}><MessageSquare style={iconStyle} /></div>;
+      case 'credit-card':
+        return <div style={containerStyle}><CreditCard style={iconStyle} /></div>;
       default:
-        return <Plus className="w-6 h-6" />;
+        return <div style={containerStyle}><Plus style={iconStyle} /></div>;
     }
   };
 
@@ -73,7 +132,7 @@ export function StepPicker({ onStepSelect }: StepPickerProps) {
             animation: `fadeSlideIn 500ms ease-out forwards ${index * 100}ms`
           }}
         >
-          {getStepIcon(template.icon)}
+          {getStepIcon(template.icon, template.type)}
           <div>
             <h3 className="font-medium transition-colors duration-300">{template.name}</h3>
             <p className="text-sm text-muted-foreground transition-colors duration-300">{template.description}</p>

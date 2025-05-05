@@ -52,10 +52,10 @@ export const useWorkflowStore = create<State>((set, get) => ({
       change.type !== 'select' && change.type !== 'position'
     );
     if (hasNonSelectionChanges) {
-      set({
+    set({
         nodes: newNodes,
         hasUnsavedChanges: true
-      });
+    });
     } else {
       set({ nodes: newNodes });
     }
@@ -64,10 +64,10 @@ export const useWorkflowStore = create<State>((set, get) => ({
     const newEdges = applyEdgeChanges(changes, get().edges);
     const hasChanges = !edgesEqual(newEdges, get().edges);
     if (hasChanges) {
-      set({
+    set({
         edges: newEdges,
         hasUnsavedChanges: true
-      });
+    });
     } else {
       set({ edges: newEdges });
     }

@@ -7,45 +7,66 @@ import { Button } from '@/components/ui/button';
 interface SchedulingSettingsProps {
   data: {
     title: string;
+    header: string;
+    description: string;
     embedCode: string;
   };
   onChange: (data: any) => void;
 }
 
 export function SchedulingSettings({ data, onChange }: SchedulingSettingsProps) {
-  const [title, setTitle] = useState(data.title || 'Schedule Meeting');
-  const [embedCode, setEmbedCode] = useState(data.embedCode || '');
+  const [formData, setFormData] = useState({
+    title: data.title || 'Scheduling',
+    header: data.header || '',
+    description: data.description || '',
+    embedCode: data.embedCode || '',
+  });
 
-  const handleSave = () => {
-    onChange({
-      ...data,
-      title,
-      embedCode,
-    });
+  const handleChange = (field: string, value: any) => {
+    const newData = { ...formData, [field]: value };
+    setFormData(newData);
+    onChange(newData);
   };
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-4">
       <div className="space-y-2">
-        <Label>Title</Label>
+        <Label>Step Name</Label>
         <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Enter title"
+          value={formData.title}
+          onChange={(e) => handleChange('title', e.target.value)}
+          placeholder="Enter step name"
         />
       </div>
+
+      <div className="space-y-2">
+        <Label>Header</Label>
+        <Input
+          value={formData.header}
+          onChange={(e) => handleChange('header', e.target.value)}
+          placeholder="Enter header text"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Description</Label>
+        <Textarea
+          value={formData.description}
+          onChange={(e) => handleChange('description', e.target.value)}
+          placeholder="Enter description text"
+          className="min-h-[100px]"
+        />
+      </div>
+
       <div className="space-y-2">
         <Label>Calendar Embed Code</Label>
         <Textarea
-          value={embedCode}
-          onChange={(e) => setEmbedCode(e.target.value)}
+          value={formData.embedCode}
+          onChange={(e) => handleChange('embedCode', e.target.value)}
           placeholder="Paste your calendar embed code here (e.g. from Calendly)"
           className="min-h-[200px] font-mono text-sm"
         />
       </div>
-      <Button onClick={handleSave} className="w-full">
-        Save Changes
-      </Button>
     </div>
   );
 } 

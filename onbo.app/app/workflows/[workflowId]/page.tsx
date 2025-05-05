@@ -15,7 +15,7 @@ import { useWorkflowStore } from '@/lib/stores/workflow-store';
 import { createClient } from '@/utils/supabase/client';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Eye, Pencil, Save, Upload, Plus } from 'lucide-react';
+import { ArrowLeft, Eye, Pencil, Save, Upload, Plus, Settings, Palette, GitBranch, Shield, Bell } from 'lucide-react';
 import Link from 'next/link';
 import { nodeTypes } from '@/components/workflow/node-types';
 import { edgeTypes } from '@/components/workflow/edge-types';
@@ -26,6 +26,13 @@ import { cn } from '@/lib/utils';
 import { StepPicker } from '@/components/workflow/step-picker';
 import { PlusButton } from '@/components/workflow/plus-button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { NodeSettings } from '@/components/workflow/node-settings';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function EmptyWorkflowState() {
   return (
@@ -74,6 +81,38 @@ export default function WorkflowBuilder() {
   const [isLoading, setIsLoading] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<ReactFlowInstance | null>(null);
+  const [activeView, setActiveView] = useState<'builder' | 'settings' | 'style'>('builder');
+  const [workflowDescription, setWorkflowDescription] = useState('');
+  const [requireAuth, setRequireAuth] = useState(false);
+  const [allowMultipleSubmissions, setAllowMultipleSubmissions] = useState(false);
+  const [saveProgress, setSaveProgress] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [redirectUrl, setRedirectUrl] = useState('');
+  const [sendEmailConfirmation, setSendEmailConfirmation] = useState(false);
+  const [branding, setBranding] = useState({
+    logo_url: '',
+    brand_color: '',
+    custom_domain: ''
+  });
+  const [flowBehavior, setFlowBehavior] = useState({
+    allow_back_navigation: true,
+    show_progress_indicator: true,
+    save_progress: false,
+    completion_deadline: null as string | null
+  });
+  const [accessSecurity, setAccessSecurity] = useState({
+    require_verification: false,
+    access_type: 'public',
+    password_protection: {
+      enabled: false,
+      password: ''
+    }
+  });
+  const [notifications, setNotifications] = useState({
+    on_start: false,
+    on_complete: false,
+    on_step_complete: false
+  });
 
   // Handle browser back/forward/close
   useEffect(() => {
@@ -91,11 +130,17 @@ export default function WorkflowBuilder() {
 
   // Handle Next.js client-side navigation
   const handleNavigation = useCallback((href: string) => {
-    if (hasUnsavedChanges) {
-      setPendingNavigation(href);
-      setShowUnsavedChangesDialog(true);
-    } else {
-      router.push(href);
+    try {
+      if (hasUnsavedChanges) {
+        setPendingNavigation(href);
+        setShowUnsavedChangesDialog(true);
+      } else {
+        console.log('Navigating to:', href);
+        router.push(href);
+      }
+    } catch (error) {
+      console.error('Navigation error:', error);
+      toast.error('Failed to navigate to preview');
     }
   }, [hasUnsavedChanges, router]);
 
@@ -118,6 +163,38 @@ export default function WorkflowBuilder() {
 
       setWorkflowTitle(workflow.name || 'Untitled Workflow');
       setWorkflowStatus(workflow.status || 'draft');
+      setWorkflowDescription(workflow.description || '');
+      setRequireAuth(workflow.require_auth || false);
+      setAllowMultipleSubmissions(workflow.allow_multiple_submissions || false);
+      setSaveProgress(workflow.save_progress || false);
+      setSuccessMessage(workflow.success_message || '');
+      setRedirectUrl(workflow.redirect_url || '');
+      setSendEmailConfirmation(workflow.send_email_confirmation || false);
+      
+      setBranding(workflow.branding || {
+        logo_url: '',
+        brand_color: '',
+        custom_domain: ''
+      });
+      setFlowBehavior(workflow.flow_behavior || {
+        allow_back_navigation: true,
+        show_progress_indicator: true,
+        save_progress: false,
+        completion_deadline: null
+      });
+      setAccessSecurity(workflow.access_security || {
+        require_verification: false,
+        access_type: 'public',
+        password_protection: {
+          enabled: false,
+          password: ''
+        }
+      });
+      setNotifications(workflow.notifications || {
+        on_start: false,
+        on_complete: false,
+        on_step_complete: false
+      });
       
       // Ensure all edges have the proper data property
       const edgesWithData = (workflow.connections || []).map((edge: Edge, index: number) => ({
@@ -196,13 +273,42 @@ export default function WorkflowBuilder() {
 
   const saveWorkflow = useCallback(async () => {
     try {
+      const workflowData = {
+        name: workflowTitle || 'Untitled Workflow',
+        description: workflowDescription || '',
+        status: workflowStatus || 'draft',
+        steps: nodes || [],
+        connections: edges || [],
+        branding: branding || {
+          logo_url: '',
+          brand_color: '',
+          custom_domain: ''
+        },
+        flow_behavior: flowBehavior || {
+          allow_back_navigation: true,
+          show_progress_indicator: true,
+          save_progress: false,
+          completion_deadline: null
+        },
+        access_security: accessSecurity || {
+          require_verification: false,
+          access_type: 'public',
+          password_protection: {
+            enabled: false,
+            password: ''
+          }
+        },
+        notifications: notifications || {
+          on_start: false,
+          on_complete: false,
+          on_step_complete: false
+        },
+        updated_at: new Date().toISOString(),
+      };
+
       const { error } = await supabase
         .from('workflows')
-        .update({
-          steps: nodes,
-          connections: edges,
-          updated_at: new Date().toISOString(),
-        })
+        .update(workflowData)
         .eq('id', params.workflowId);
 
       if (error) {
@@ -217,7 +323,20 @@ export default function WorkflowBuilder() {
       console.error('Error:', error);
       toast.error('An unexpected error occurred');
     }
-  }, [nodes, edges, params.workflowId, supabase, markChangesSaved]);
+  }, [
+    nodes,
+    edges,
+    params.workflowId,
+    supabase,
+    markChangesSaved,
+    workflowTitle,
+    workflowDescription,
+    workflowStatus,
+    branding,
+    flowBehavior,
+    accessSecurity,
+    notifications
+  ]);
 
   const publishWorkflow = useCallback(async () => {
     try {
@@ -258,12 +377,13 @@ export default function WorkflowBuilder() {
     };
 
     const existingNodes = nodes || [];
+    const nodeSpacing = 440; // 300px node width + 140px gap
     
     // If inserting at a specific position
     if (insertIndex !== null) {
       const xPosition = insertIndex === 0 
         ? 100 // First position
-        : existingNodes[insertIndex - 1].position.x + 400; // After specified node
+        : existingNodes[insertIndex - 1].position.x + nodeSpacing; // After specified node
       
       // Shift all subsequent nodes to the right
       const updatedNodes = existingNodes.map((node, idx) => {
@@ -272,7 +392,7 @@ export default function WorkflowBuilder() {
             ...node,
             position: {
               ...node.position,
-              x: node.position.x + 400
+              x: node.position.x + nodeSpacing
             }
           };
         }
@@ -344,7 +464,7 @@ export default function WorkflowBuilder() {
     } else {
       // Add to the end (existing behavior)
       const lastNode = existingNodes[existingNodes.length - 1];
-      const xPosition = lastNode ? lastNode.position.x + 400 : 100;
+      const xPosition = lastNode ? lastNode.position.x + nodeSpacing : 100;
       newNode.position = { x: xPosition, y: 100 };
 
       if (lastNode) {
@@ -436,13 +556,15 @@ export default function WorkflowBuilder() {
     <div className="h-screen flex flex-col">
       <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-16 items-center px-4">
-          <button 
-            onClick={() => handleNavigation('/workflows')} 
-            className="flex items-center gap-2 text-sm font-medium hover:text-foreground/70 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Workflows
-          </button>
+          <div className="w-[200px]">
+            <button 
+              onClick={() => handleNavigation('/workflows')} 
+              className="flex items-center gap-2 text-sm font-medium hover:text-foreground/70 transition-colors"
+        >
+              <ArrowLeft className="h-4 w-4" />
+              Back to Workflows
+            </button>
+          </div>
           <div className="flex-1 flex items-center justify-center gap-2">
             <Badge 
               variant="outline"
@@ -472,7 +594,7 @@ export default function WorkflowBuilder() {
               </button>
           )}
         </div>
-          <div className="flex items-center gap-2">
+          <div className="w-[200px] flex items-center justify-end gap-2">
             {!isLoading && (
               <>
                 <Button 
@@ -485,9 +607,9 @@ export default function WorkflowBuilder() {
                   )}
                 >
                   <Save className="h-4 w-4 mr-1" />
-                  Save
-                </Button>
-                <Button 
+            Save
+          </Button>
+          <Button 
                   variant="outline" 
                   size="sm" 
                   className="hover:scale-105 transition-all duration-200"
@@ -499,39 +621,93 @@ export default function WorkflowBuilder() {
                 <Button 
                   variant={workflowStatus === 'published' ? "outline" : "default"} 
                   size="sm" 
-                  onClick={publishWorkflow} 
-                  disabled={workflowStatus === 'published'}
+            onClick={publishWorkflow} 
+            disabled={workflowStatus === 'published'}
                   className="hover:scale-105 transition-all duration-200"
-                >
+          >
                   <Upload className="h-4 w-4 mr-1" />
                   {workflowStatus === 'published' ? 'Published' : 'Publish'}
-                </Button>
+          </Button>
               </>
             )}
           </div>
         </div>
       </div>
+      <div className="flex justify-center border-b">
+        <div className="flex">
+          <button
+            className={cn(
+              "px-4 py-2 text-sm font-medium transition-colors relative",
+              "hover:text-foreground/80",
+              "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5",
+              "after:transition-colors",
+              activeView === 'builder' ? (
+                "text-foreground after:bg-primary"
+              ) : (
+                "text-muted-foreground after:bg-transparent"
+              )
+            )}
+            onClick={() => setActiveView('builder')}
+          >
+            Builder
+          </button>
+          <button
+            className={cn(
+              "px-4 py-2 text-sm font-medium transition-colors relative",
+              "hover:text-foreground/80",
+              "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5",
+              "after:transition-colors",
+              activeView === 'settings' ? (
+                "text-foreground after:bg-primary"
+              ) : (
+                "text-muted-foreground after:bg-transparent"
+              )
+            )}
+            onClick={() => setActiveView('settings')}
+          >
+            Settings
+          </button>
+          <button
+            className={cn(
+              "px-4 py-2 text-sm font-medium transition-colors relative",
+              "hover:text-foreground/80",
+              "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5",
+              "after:transition-colors",
+              activeView === 'style' ? (
+                "text-foreground after:bg-primary"
+              ) : (
+                "text-muted-foreground after:bg-transparent"
+              )
+            )}
+            onClick={() => setActiveView('style')}
+          >
+            Style
+          </button>
+        </div>
+      </div>
       <div className="flex-1 flex">
-        <div className="flex-1 relative">
-          {nodes.length === 0 ? (
-            <EmptyWorkflowState />
-          ) : (
+        {activeView === 'builder' ? (
+          <>
+            <div className="flex-1 relative">
+              {nodes.length === 0 ? (
+                <EmptyWorkflowState />
+              ) : (
       <ReactFlow
-              onInit={instance => {
-                flowRef.current = instance;
-                instance.fitView({ padding: 0.2, includeHiddenNodes: true });
-              }}
+                  onInit={instance => {
+                    flowRef.current = instance;
+                    instance.fitView({ padding: 0.2, includeHiddenNodes: true });
+                  }}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-              onNodeClick={handleNodeClick}
-              onPaneClick={() => setSelectedNodeId(null)}
+                  onNodeClick={handleNodeClick}
+                  onPaneClick={() => setSelectedNodeId(null)}
         fitView
         fitViewOptions={{ padding: 0.2, includeHiddenNodes: true }}
-              className="bg-background"
+                  className="bg-background"
         defaultEdgeOptions={{
           type: 'custom',
           animated: false,
@@ -544,278 +720,340 @@ export default function WorkflowBuilder() {
         <Background />
         <Controls />
         <MiniMap />
-            </ReactFlow>
-          )}
-          </div>
+                </ReactFlow>
+              )}
+            </div>
       {selectedNode && (
-          <div className="w-[350px] border-l bg-background flex flex-col">
+              <div className="w-[350px] border-l bg-background flex flex-col">
           <div className="flex items-center justify-between p-4 border-b">
             <div className="font-semibold text-lg">{selectedNode.data?.title || 'Step Settings'}</div>
             <button onClick={() => setSelectedNodeId(null)} className="text-muted-foreground hover:text-foreground">✕</button>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
-            {/* Example fields, can be expanded per node type */}
-            <div className="mb-4">
-                <label className="block text-xs font-medium mb-1">Step Name</label>
-              <input
-                className="w-full border rounded px-2 py-1"
-                value={selectedNode.data?.title || ''}
-                onChange={e => {
-                  const newTitle = e.target.value;
-                  useWorkflowStore.setState({
-                    nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, title: newTitle } } : n),
-                    hasUnsavedChanges: true
-                  });
-                }}
-              />
-            </div>
-              {/* Form-specific settings */}
-              {selectedNode.type === 'form' && (
-                <>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Description / Instructions</label>
-                    <textarea
-                      className="w-full border rounded px-2 py-1"
-                      value={selectedNode.data?.description || ''}
-                      onChange={e => {
-                        const newDescription = e.target.value;
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, description: newDescription } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    />
-                  </div>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Fields</label>
-                    <div className="space-y-3">
-                      {(selectedNode.data?.fields || []).map((field: any, idx: number) => (
-                        <div key={idx} className="p-2 border rounded bg-muted/20 flex flex-col gap-1">
-                          <div className="flex gap-2">
-                            <select
-                              className="border rounded px-2 py-1 text-xs w-1/2"
-                              value={field.type}
-                              onChange={e => {
-                                const newType = e.target.value;
-                                const newFields = [...selectedNode.data.fields];
-                                newFields[idx].type = newType;
-                                useWorkflowStore.setState({
-                                  nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
-                                  hasUnsavedChanges: true
-                                });
-                              }}
-                            >
-                              <option value="text">Single Line</option>
-                              <option value="textarea">Paragraph</option>
-                              <option value="number">Number</option>
-                              <option value="dropdown">Dropdown</option>
-                            </select>
-                            <button
-                              className="text-xs text-red-500 ml-auto px-2"
-                              onClick={() => {
-                                const newFields = [...selectedNode.data.fields];
-                                newFields.splice(idx, 1);
-                                useWorkflowStore.setState({
-                                  nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
-                                  hasUnsavedChanges: true
-                                });
-                              }}
-                              type="button"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          <input
-                            className="border rounded px-2 py-1 text-xs w-full"
-                            placeholder="Label"
-                            value={field.label}
-                            onChange={e => {
-                              const newLabel = e.target.value;
-                              const newFields = [...selectedNode.data.fields];
-                              newFields[idx].label = newLabel;
-                              useWorkflowStore.setState({
-                                nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
-                                hasUnsavedChanges: true
-                              });
-                            }}
-                          />
-                          <input
-                            className="border rounded px-2 py-1 text-xs w-full"
-                            placeholder="Placeholder"
-                            value={field.placeholder}
-                            onChange={e => {
-                              const newPlaceholder = e.target.value;
-                              const newFields = [...selectedNode.data.fields];
-                              newFields[idx].placeholder = newPlaceholder;
-                              useWorkflowStore.setState({
-                                nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
-                                hasUnsavedChanges: true
-                              });
-                            }}
-                          />
-                          {field.type === 'dropdown' && (
-                            <input
-                              className="border rounded px-2 py-1 text-xs w-full"
-                              placeholder="Comma-separated options (e.g. Option 1, Option 2)"
-                              value={field.options || ''}
-                              onChange={e => {
-                                const newFields = [...selectedNode.data.fields];
-                                newFields[idx].options = e.target.value;
-                                useWorkflowStore.setState({
-                                  nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
-                                  hasUnsavedChanges: true
-                                });
-                              }}
-                            />
-                          )}
-                          <label className="flex items-center gap-2 text-xs mt-1">
-                            <input
-                              type="checkbox"
-                              checked={field.required}
-                              onChange={e => {
-                                const newFields = [...selectedNode.data.fields];
-                                newFields[idx].required = e.target.checked;
-                                useWorkflowStore.setState({
-                                  nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
-                                  hasUnsavedChanges: true
-                                });
-                              }}
-                            />
-                            Required
-                          </label>
-                        </div>
-                      ))}
+                  <NodeSettings />
+                </div>
+              </div>
+            )}
+          </>
+        ) : activeView === 'settings' ? (
+          <div className="flex-1 p-4 overflow-y-auto flex justify-center bg-slate-50 dark:bg-slate-900/30">
+            <div className="w-[800px] max-w-full">
+              <div className="flex items-center gap-3 mb-8">
+                <h2 className="text-2xl font-semibold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Workflow Settings</h2>
+                <div className="h-px flex-1 bg-gradient-to-r from-primary/20 to-transparent" />
+              </div>
+              <Accordion 
+                type="single" 
+                collapsible 
+                className="space-y-4"
+                defaultValue="basic"
+              >
+                <AccordionItem 
+                  value="basic" 
+                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
+                >
+                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-[#1260cc10]">
+                        <Settings className="w-4 h-4 text-[#1260cc]" />
+                      </div>
+                      Basic Settings
                     </div>
-                    <button
-                      className="mt-2 px-2 py-1 border rounded text-xs bg-muted hover:bg-muted/50 w-full"
-                      type="button"
-                      onClick={() => {
-                        const newFields = [...(selectedNode.data?.fields || [])];
-                        newFields.push({ type: 'text', label: '', placeholder: '', required: false });
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, fields: newFields } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    >
-                      + Add Field
-                    </button>
-                  </div>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Submit Button Text</label>
-                    <input
-                      className="w-full border rounded px-2 py-1"
-                      value={selectedNode.data?.submitLabel || 'Submit'}
-                      onChange={e => {
-                        const newLabel = e.target.value;
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, submitLabel: newLabel } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    />
-                  </div>
-                </>
-              )}
-              {/* Text step settings */}
-              {selectedNode.type === 'text' && (
-                <>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Header</label>
-                    <input
-                      className="w-full border rounded px-2 py-1"
-                      value={selectedNode.data?.header || ''}
-                      onChange={e => {
-                        const newHeader = e.target.value;
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, header: newHeader } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    />
-                  </div>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Subheader <span className="text-muted-foreground">(optional)</span></label>
-                    <input
-                      className="w-full border rounded px-2 py-1"
-                      value={selectedNode.data?.subheader || ''}
-                      onChange={e => {
-                        const newSubheader = e.target.value;
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, subheader: newSubheader } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    />
-                  </div>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Body Text <span className="text-muted-foreground">(supports markdown, rich text, emojis)</span></label>
-                    <textarea
-                      className="w-full border rounded px-2 py-1 min-h-[80px]"
-                      value={selectedNode.data?.content || ''}
-                      onChange={e => {
-                        const newContent = e.target.value;
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, content: newContent } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    />
-                  </div>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Image <span className="text-muted-foreground">(optional, URL)</span></label>
-                    <input
-                      className="w-full border rounded px-2 py-1"
-                      placeholder="https://..."
-                      value={selectedNode.data?.image || ''}
-                      onChange={e => {
-                        const newImage = e.target.value;
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, image: newImage } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    />
-                  </div>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Alignment</label>
-                    <select
-                      className="w-full border rounded px-2 py-1"
-                      value={selectedNode.data?.align || 'left'}
-                      onChange={e => {
-                        const newAlign = e.target.value;
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, align: newAlign } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    >
-                      <option value="left">Left</option>
-                      <option value="center">Center</option>
-                    </select>
-                  </div>
-                </>
-              )}
-              {/* Scheduling step settings */}
-              {selectedNode.type === 'scheduling' && (
-                <>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1">Calendar Embed Code</label>
-                    <textarea
-                      className="w-full border rounded px-2 py-1 min-h-[200px] font-mono text-sm"
-                      value={selectedNode.data?.embedCode || ''}
-                      placeholder="*Paste your calendar embed code here (e.g. from Calendly)"
-                      onChange={e => {
-                        const newEmbedCode = e.target.value;
-                        useWorkflowStore.setState({
-                          nodes: nodes.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, embedCode: newEmbedCode } } : n),
-                          hasUnsavedChanges: true
-                        });
-                      }}
-                    />
-                  </div>
-                </>
-              )}
+                  </AccordionTrigger>
+                  <AccordionContent className="px-6 pt-4">
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <Label>Workflow Name</Label>
+                        <Input
+                          value={workflowTitle}
+                          onChange={e => {
+                            setWorkflowTitle(e.target.value);
+                            useWorkflowStore.setState({ hasUnsavedChanges: true });
+                          }}
+                          onBlur={() => updateWorkflowTitle(workflowTitle)}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Description</Label>
+                        <Textarea
+                          placeholder="Describe the purpose of this workflow..."
+                          value={workflowDescription}
+                onChange={e => {
+                            setWorkflowDescription(e.target.value);
+                            useWorkflowStore.setState({ hasUnsavedChanges: true });
+                          }}
+                          className="min-h-[100px]"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Workflow Status</Label>
+                        <RadioGroup
+                          value={workflowStatus}
+                          onValueChange={(value: 'draft' | 'published') => setWorkflowStatus(value)}
+                          className="flex gap-4"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="draft" id="status-draft" />
+                            <Label htmlFor="status-draft">Draft</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="published" id="status-published" />
+                            <Label htmlFor="status-published">Published</Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem 
+                  value="branding" 
+                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
+                >
+                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-[#1260cc10]">
+                        <Palette className="w-4 h-4 text-[#1260cc]" />
+                      </div>
+                      Custom Branding
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-6 pt-4">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Logo</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="Enter logo URL"
+                            value={branding.logo_url}
+                            onChange={e => setBranding(prev => ({ ...prev, logo_url: e.target.value }))}
+                          />
+                          <Button variant="outline" size="sm">Upload</Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Brand Color</Label>
+                        <Input
+                          type="color"
+                          className="h-10"
+                          value={branding.brand_color || '#000000'}
+                          onChange={e => setBranding(prev => ({ ...prev, brand_color: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Custom Domain</Label>
+                        <Input
+                          placeholder="your-domain.com"
+                          value={branding.custom_domain}
+                          onChange={e => setBranding(prev => ({ ...prev, custom_domain: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem 
+                  value="behavior" 
+                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
+                >
+                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-[#1260cc10]">
+                        <GitBranch className="w-4 h-4 text-[#1260cc]" />
+                      </div>
+                      Flow Behavior
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-6 pt-4">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between py-2 border-t">
+                        <div className="space-y-0.5">
+                          <Label>Allow Back Navigation</Label>
+                          <p className="text-sm text-muted-foreground">Let users revisit earlier steps</p>
+                        </div>
+                        <Switch
+                          checked={flowBehavior.allow_back_navigation}
+                          onCheckedChange={checked => setFlowBehavior(prev => ({ ...prev, allow_back_navigation: checked }))}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between py-2 border-t">
+                        <div className="space-y-0.5">
+                          <Label>Progress Indicator</Label>
+                          <p className="text-sm text-muted-foreground">Show completion progress</p>
+                        </div>
+                        <Switch
+                          checked={flowBehavior.show_progress_indicator}
+                          onCheckedChange={checked => setFlowBehavior(prev => ({ ...prev, show_progress_indicator: checked }))}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between py-2 border-t">
+                        <div className="space-y-0.5">
+                          <Label>Save Progress</Label>
+                          <p className="text-sm text-muted-foreground">Allow users to save and resume later</p>
+                        </div>
+                        <Switch
+                          checked={flowBehavior.save_progress}
+                          onCheckedChange={checked => setFlowBehavior(prev => ({ ...prev, save_progress: checked }))}
+                        />
+                      </div>
+
+                      <div className="space-y-2 py-2 border-t">
+                        <Label>Completion Deadline</Label>
+                        <p className="text-sm text-muted-foreground mb-2">Set a deadline for workflow completion</p>
+                        <Input
+                          type="datetime-local"
+                          value={flowBehavior.completion_deadline || ''}
+                          onChange={e => setFlowBehavior(prev => ({ ...prev, completion_deadline: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem 
+                  value="security" 
+                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
+                >
+                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-[#1260cc10]">
+                        <Shield className="w-4 h-4 text-[#1260cc]" />
+                      </div>
+                      Access & Security
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-6 pt-4">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between py-2 border-t">
+                        <div className="space-y-0.5">
+                          <Label>Require Login or Email Verification</Label>
+                          <p className="text-sm text-muted-foreground">Users must verify their identity</p>
+                        </div>
+                        <Switch
+                          checked={accessSecurity.require_verification}
+                          onCheckedChange={checked => setAccessSecurity(prev => ({ ...prev, require_verification: checked }))}
+                        />
+                      </div>
+
+                      <div className="space-y-2 py-2 border-t">
+                        <Label>Limit Access To</Label>
+                        <Select
+                          value={accessSecurity.access_type}
+                          onValueChange={value => setAccessSecurity(prev => ({ ...prev, access_type: value }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="public">Anyone with the link</SelectItem>
+                            <SelectItem value="invite_only">Invited users only</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="py-2 border-t">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="space-y-0.5">
+                            <Label>Password Protection</Label>
+                            <p className="text-sm text-muted-foreground">Require a password to access</p>
+                          </div>
+                          <Switch
+                            checked={accessSecurity.password_protection.enabled}
+                            onCheckedChange={checked => setAccessSecurity(prev => ({
+                              ...prev,
+                              password_protection: {
+                                ...prev.password_protection,
+                                enabled: checked
+                              }
+                            }))}
+                          />
+                        </div>
+                        {accessSecurity.password_protection.enabled && (
+                          <Input
+                            type="password"
+                            placeholder="Enter password"
+                            value={accessSecurity.password_protection.password}
+                            onChange={e => setAccessSecurity(prev => ({
+                              ...prev,
+                              password_protection: {
+                                ...prev.password_protection,
+                                password: e.target.value
+                              }
+                            }))}
+                            className="mt-2"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem 
+                  value="notifications" 
+                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
+                >
+                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-md bg-[#1260cc10]">
+                        <Bell className="w-4 h-4 text-[#1260cc]" />
+                      </div>
+                      Notifications
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-6 pt-4">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between py-2 border-t">
+                        <div className="space-y-0.5">
+                          <Label>On Workflow Start</Label>
+                          <p className="text-sm text-muted-foreground">Send email when workflow starts</p>
+                        </div>
+                        <Switch
+                          checked={notifications.on_start}
+                          onCheckedChange={checked => setNotifications(prev => ({ ...prev, on_start: checked }))}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between py-2 border-t">
+                        <div className="space-y-0.5">
+                          <Label>On Workflow Complete</Label>
+                          <p className="text-sm text-muted-foreground">Send email when workflow is completed</p>
+                        </div>
+                        <Switch
+                          checked={notifications.on_complete}
+                          onCheckedChange={checked => setNotifications(prev => ({ ...prev, on_complete: checked }))}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between py-2 border-t">
+                        <div className="space-y-0.5">
+                          <Label>On Step Complete</Label>
+                          <p className="text-sm text-muted-foreground">Send email when any step is completed</p>
+                        </div>
+                        <Switch
+                          checked={notifications.on_step_complete}
+                          onCheckedChange={checked => setNotifications(prev => ({ ...prev, on_step_complete: checked }))}
+                        />
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 p-4 overflow-y-auto flex justify-center bg-slate-50 dark:bg-slate-900/30">
+            <div className="w-[800px] max-w-full">
+              <div className="flex items-center gap-3 mb-8">
+                <h2 className="text-2xl font-semibold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Workflow Style</h2>
+                <div className="h-px flex-1 bg-gradient-to-r from-primary/20 to-transparent" />
+              </div>
+              {/* Style content will be added later */}
             </div>
           </div>
         )}

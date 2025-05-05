@@ -1,7 +1,8 @@
 import { Handle, Position } from 'reactflow';
-import { Type, Video, FormInput, MoreHorizontal, Plus, Upload, FileText, Calendar, MessageSquare, Signature } from 'lucide-react';
+import { Type, Video, FormInput, MoreHorizontal, Plus, FileText, Calendar, Signature, CreditCard } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { useWorkflowStore } from '@/lib/stores/workflow-store';
+import { cn } from '@/lib/utils';
 
 const baseNodeStyles = 'min-w-[220px] rounded-lg border bg-card text-card-foreground shadow-sm relative';
 const handleStyles = 'w-3 h-3 bg-primary border-2 border-background';
@@ -15,9 +16,73 @@ function useNodePosition(id: string) {
   return { isFirst, isLast };
 }
 
+// Color mapping for different step types
+const iconColorMap: Record<string, { color: string; bgColor: string }> = {
+  text: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  video: {
+    color: '#9333ea',
+    bgColor: '#9333ea10'
+  },
+  form: {
+    color: '#16a34a',
+    bgColor: '#16a34a10'
+  },
+  contract_esign: {
+    color: '#e11d48',
+    bgColor: '#e11d4810'
+  },
+  scheduling: {
+    color: '#0891b2',
+    bgColor: '#0891b210'
+  },
+  document_embed: {
+    color: '#d97706',
+    bgColor: '#d9770610'
+  },
+  payment: {
+    color: '#059669',
+    bgColor: '#05966910'
+  }
+};
+
+// Add color mapping for different node types with background colors
+const nodeColorMap: Record<string, { color: string, bgColor: string }> = {
+  text: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  video: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  form: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  contract_esign: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  scheduling: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  document_embed: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  },
+  payment: {
+    color: '#1260cc',
+    bgColor: '#1260cc10'
+  }
+};
+
 function StepBadge({ label }: { label: string }) {
   return (
-    <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-muted/50 text-muted-foreground rounded-md text-xs font-medium whitespace-nowrap z-10">
+    <div className="absolute -top-6 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
       {label}
     </div>
   );
@@ -155,26 +220,26 @@ function NodeMenu({ nodeId }: { nodeId: string }) {
   return (
     <>
       <div className="absolute top-2 right-2 z-10 pl-2">
-        <button
+      <button
           ref={buttonRef}
-          className="p-1 rounded hover:bg-muted focus:outline-none"
+        className="p-1 rounded hover:bg-muted focus:outline-none"
           onClick={toggleMenu}
-          tabIndex={-1}
-        >
-          <MoreHorizontal className="w-5 h-5" />
-        </button>
-        {open && (
+        tabIndex={-1}
+      >
+        <MoreHorizontal className="w-5 h-5" />
+      </button>
+      {open && (
           <div ref={menuRef} className="absolute right-0 mt-2 w-32 bg-background border rounded-md shadow-md z-20">
-            <button 
+          <button 
               className="block w-full text-left px-4 py-2 hover:bg-muted text-sm text-red-600 hover:text-red-700 rounded-t-md"
               onClick={(e) => {
                 e.stopPropagation();
                 setShowDeleteConfirm(true);
                 setOpen(false);
               }}
-            >
-              Delete
-            </button>
+          >
+            Delete
+          </button>
             <button 
               className="block w-full text-left px-4 py-2 hover:bg-muted text-sm"
               onClick={(e) => e.stopPropagation()}
@@ -187,9 +252,9 @@ function NodeMenu({ nodeId }: { nodeId: string }) {
             >
               Duplicate
             </button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
       <DeleteConfirmationDialog
         isOpen={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
@@ -212,11 +277,12 @@ function AddNodeButton({ nodeId }: { nodeId: string }) {
 
   return (
     <div 
-      className="absolute right-0"
+      className="absolute right-0 pointer-events-none"
       style={{ 
         right: '-100px',
         top: parseInt(headerHeight) / 2,
-        transform: 'translateY(-50%)'
+        transform: 'translateY(-50%)',
+        zIndex: 10
       }}
     >
       {/* Line connecting to the plus button */}
@@ -226,7 +292,8 @@ function AddNodeButton({ nodeId }: { nodeId: string }) {
       />
       <button
         className="w-8 h-8 rounded-full bg-background hover:bg-accent flex items-center justify-center 
-                   border-2 border-border shadow-sm hover:shadow transition-all group relative"
+                   border-2 border-border shadow-sm hover:shadow transition-all group cursor-pointer pointer-events-auto
+                   hover:scale-110 hover:border-border/80"
         onClick={() => {
           const workflow = useWorkflowStore.getState();
           workflow.setShowStepPicker(true);
@@ -280,13 +347,17 @@ function EditableTitle({ value, onChange }: { value: string, onChange: (v: strin
 // Update NodeHeader to handle the badges directly
 function NodeHeader({ icon: Icon, title, type, id }: { icon: any, title: string, type: string, id: string }) {
   const { isFirst, isLast } = useNodePosition(id);
+  const colors = nodeColorMap[type.toLowerCase()] || { color: '#1260cc', bgColor: '#1260cc10' };
+  
   return (
     <>
       {(isFirst || isLast) && (
         <StepBadge label={isFirst ? "First Step" : "Last Step"} />
       )}
       <div className="flex items-center gap-3 p-4 pt-2" style={{ height: headerHeight }}>
-        <Icon className="w-8 h-8 text-primary flex-shrink-0" />
+        <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center")} style={{ backgroundColor: colors.bgColor }}>
+          <Icon className="w-6 h-6" style={{ color: colors.color }} />
+        </div>
         <div className="flex-1 min-w-0 pr-8">
           <span className="font-semibold text-base cursor-pointer truncate block" title={title}>
             {title}
@@ -301,311 +372,339 @@ function NodeHeader({ icon: Icon, title, type, id }: { icon: any, title: string,
 // Update each node to use the new header component and handle positioning
 export function TextNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
   return (
-    <div className={baseNodeStyles + (selected ? ' ring-2 ring-primary' : '')}>
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
+    <div className="relative">
+      <div className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border w-[300px] bg-background transition-all duration-200",
+        "hover:scale-[1.02] hover:cursor-pointer",
+        selected ? "ring-2 ring-primary" : "hover:shadow-xl"
+      )}>
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
       <NodeMenu nodeId={id} />
-      <AddNodeButton nodeId={id} />
-      <NodeHeader 
-        icon={Type} 
-        title={data.title || 'Text Display'} 
-        type="Text"
-        id={id}
-      />
-      {(data.header || data.subheader) && (
-        <div className="px-4 pb-4">
-          <div className="h-px bg-border mb-3" />
-          <div className="text-sm text-muted-foreground space-y-1">
-            {data.header && (
-              <div className="flex items-center gap-2">
-                <span className="font-medium flex-shrink-0">Header:</span>
-                <span className="truncate">{data.header}</span>
-              </div>
-            )}
-            {data.subheader && (
-              <div className="flex items-center gap-2">
-                <span className="font-medium flex-shrink-0">Subheader:</span>
-                <span className="truncate">{data.subheader}</span>
-              </div>
-            )}
+        <NodeHeader 
+          icon={Type} 
+          title={data.title || 'Text Display'} 
+          type="Text"
+          id={id}
+        />
+        {(data.header || data.subheader) && (
+          <div className="px-4 pb-4">
+            <div className="h-px bg-border mb-3" />
+            <div className="text-sm text-muted-foreground space-y-1">
+              {data.header && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium flex-shrink-0">Header:</span>
+                  <span className="truncate">{data.header}</span>
+                </div>
+              )}
+              {data.subheader && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium flex-shrink-0">Subheader:</span>
+                  <span className="truncate">{data.subheader}</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
+        )}
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+      </div>
+      <AddNodeButton nodeId={id} />
     </div>
   );
 }
 
 export function VideoNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
   return (
-    <div className={baseNodeStyles + (selected ? ' ring-2 ring-primary' : '')}>
-      <Handle type="target" position={Position.Left} className={handleStyles} />
+    <div className="relative">
+      <div className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border w-[300px] bg-background transition-all duration-200",
+        "hover:scale-[1.02] hover:cursor-pointer",
+        selected ? "ring-2 ring-primary" : "hover:shadow-xl"
+      )}>
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
       <NodeMenu nodeId={id} />
+        <NodeHeader icon={Video} title={data.title || 'Video'} type="Video" id={id} />
+        {data.description && (
+          <>
+            <div className="h-px bg-border my-3" />
+            <p className="text-sm text-muted-foreground truncate">
+              {data.description}
+            </p>
+          </>
+        )}
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+      </div>
       <AddNodeButton nodeId={id} />
-      <NodeHeader icon={Video} title={data.title || 'Video'} type="Video" id={id} />
-      {data.description && (
-        <>
-          <div className="h-px bg-border my-3" />
-          <p className="text-sm text-muted-foreground truncate">
-            {data.description}
-          </p>
-        </>
-      )}
-      <Handle type="source" position={Position.Right} className={handleStyles} />
     </div>
   );
 }
 
 export function FormNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
   return (
-    <div className={baseNodeStyles + (selected ? ' ring-2 ring-primary' : '')}>
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
+    <div className="relative">
+      <div className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border w-[300px] bg-background transition-all duration-200",
+        "hover:scale-[1.02] hover:cursor-pointer",
+        selected ? "ring-2 ring-primary" : "hover:shadow-xl"
+      )}>
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
       <NodeMenu nodeId={id} />
+        <NodeHeader 
+          icon={FormInput} 
+          title={data.title || 'Form'} 
+          type="Form"
+          id={id}
+        />
+        {data.fields?.length > 0 && (
+          <>
+            <div className="px-4 pb-4">
+              <div className="h-px bg-border mb-3" />
+              <div className="text-sm text-muted-foreground space-y-1">
+                {data.fields.map((field: any, idx: number) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="truncate">{field.label || 'Untitled'}</span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">(
+                      {field.type === 'text' && 'Single Line'}
+                      {field.type === 'textarea' && 'Paragraph'}
+                      {field.type === 'number' && 'Number'}
+                      {field.type === 'dropdown' && 'Dropdown'}
+                    )</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {data.fields.length} field{data.fields.length !== 1 ? 's' : ''}
+            </div>
+          </>
+        )}
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+      </div>
       <AddNodeButton nodeId={id} />
-      <NodeHeader 
-        icon={FormInput} 
-        title={data.title || 'Form'} 
-        type="Form"
-        id={id}
-      />
-      {data.fields?.length > 0 && (
-        <div className="px-4 pb-4">
-          <div className="h-px bg-border mb-3" />
-          <div className="text-sm text-muted-foreground space-y-1">
-            {data.fields.map((field: any, idx: number) => (
-              <div key={idx} className="flex items-center gap-2">
-                <span className="truncate">{field.label || 'Untitled'}</span>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">(
-                  {field.type === 'text' && 'Single Line'}
-                  {field.type === 'textarea' && 'Paragraph'}
-                  {field.type === 'number' && 'Number'}
-                  {field.type === 'dropdown' && 'Dropdown'}
-                )</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
-    </div>
-  );
-}
-
-export function FileUploadNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
-  return (
-    <div className={baseNodeStyles + (selected ? ' ring-2 ring-primary' : '')}>
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
-      <NodeMenu nodeId={id} />
-      <AddNodeButton nodeId={id} />
-      <NodeHeader 
-        icon={Upload} 
-        title={data.title || 'File Upload'} 
-        type="File Upload"
-        id={id}
-      />
-      {(data.maxFiles || data.allowedTypes) && (
-        <div className="px-4 pb-4">
-          <div className="h-px bg-border mb-3" />
-          <div className="text-sm text-muted-foreground space-y-1">
-            {data.maxFiles && (
-              <div className="flex items-center gap-2">
-                <span className="font-medium flex-shrink-0">Max Files:</span>
-                <span className="truncate">{data.maxFiles}</span>
-              </div>
-            )}
-            {data.allowedTypes && (
-              <div className="flex items-center gap-2">
-                <span className="font-medium flex-shrink-0">Allowed Types:</span>
-                <span className="truncate">{data.allowedTypes}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
     </div>
   );
 }
 
 export function ContractNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
   return (
-    <div className={baseNodeStyles + (selected ? ' ring-2 ring-primary' : '')}>
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
-      <NodeMenu nodeId={id} />
-      <AddNodeButton nodeId={id} />
-      <NodeHeader 
-        icon={Signature} 
-        title={data.title || 'Contract Signing'} 
-        type="Contract"
-        id={id}
-      />
-      {data.documentName && (
-        <div className="px-4 pb-4">
-          <div className="h-px bg-border mb-3" />
-          <div className="text-sm text-muted-foreground space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="font-medium flex-shrink-0">Document:</span>
-              <span className="truncate">{data.documentName}</span>
+    <div className="relative">
+      <div className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border w-[300px] bg-background transition-all duration-200",
+        "hover:scale-[1.02] hover:cursor-pointer",
+        selected ? "ring-2 ring-primary" : "hover:shadow-xl"
+      )}>
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+        <NodeMenu nodeId={id} />
+        <NodeHeader 
+          icon={Signature} 
+          title={data.title || 'Contract Signing'} 
+          type="Contract"
+          id={id}
+        />
+        {data.documentName && (
+          <div className="px-4 pb-4">
+            <div className="h-px bg-border mb-3" />
+            <div className="text-sm text-muted-foreground space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium flex-shrink-0">Document:</span>
+                <span className="truncate">{data.documentName}</span>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
+        )}
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+      </div>
+      <AddNodeButton nodeId={id} />
     </div>
   );
 }
 
 export function SchedulingNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
   return (
-    <div className={baseNodeStyles + (selected ? ' ring-2 ring-primary' : '')}>
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
-      <NodeMenu nodeId={id} />
-      <AddNodeButton nodeId={id} />
-      <NodeHeader 
-        icon={Calendar} 
-        title={data.title || 'Scheduling'} 
-        type="Calendar"
-        id={id}
-      />
-      {data.embedCode && (
-        <div className="px-4 pb-4">
-          <div className="h-px bg-border mb-3" />
-          <div className="text-sm text-muted-foreground truncate">
-            Calendar embed code added
+    <div className="relative">
+      <div className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border w-[300px] bg-background transition-all duration-200",
+        "hover:scale-[1.02] hover:cursor-pointer",
+        selected ? "ring-2 ring-primary" : "hover:shadow-xl"
+      )}>
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+        <NodeMenu nodeId={id} />
+        <NodeHeader 
+          icon={Calendar} 
+          title={data.title || 'Scheduling'} 
+          type="Calendar"
+          id={id}
+        />
+        {data.embedCode && (
+          <div className="px-4 pb-4">
+            <div className="h-px bg-border mb-3" />
+            <div className="text-sm text-muted-foreground truncate">
+              Calendar embed code added
+            </div>
           </div>
-        </div>
-      )}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
-    </div>
-  );
-}
-
-export function FeedbackNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
-  return (
-    <div className={baseNodeStyles + (selected ? ' ring-2 ring-primary' : '')}>
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
-      <NodeMenu nodeId={id} />
+        )}
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+      </div>
       <AddNodeButton nodeId={id} />
-      <NodeHeader 
-        icon={MessageSquare} 
-        title={data.title || 'Feedback Form'} 
-        type="Feedback"
-        id={id}
-      />
-      {data.description && (
-        <div className="px-4 pb-4">
-          <div className="h-px bg-border mb-3" />
-          <p className="text-sm text-muted-foreground truncate">
-            {data.description}
-          </p>
-        </div>
-      )}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
     </div>
   );
 }
 
 export function DocumentNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
   return (
-    <div className={baseNodeStyles + (selected ? ' ring-2 ring-primary' : '')}>
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
-      <NodeMenu nodeId={id} />
-      <AddNodeButton nodeId={id} />
-      <NodeHeader 
-        icon={FileText} 
-        title={data.title || 'Document'} 
-        type="Document"
-        id={id}
-      />
-      {(data.documentName || data.documentType) && (
-        <div className="px-4 pb-4">
-          <div className="h-px bg-border mb-3" />
-          <div className="text-sm text-muted-foreground space-y-1">
-            {data.documentName && (
-              <div className="flex items-center gap-2">
-                <span className="font-medium flex-shrink-0">Document:</span>
-                <span className="truncate">{data.documentName}</span>
-              </div>
-            )}
-            {data.documentType && (
-              <div className="flex items-center gap-2">
-                <span className="font-medium flex-shrink-0">Type:</span>
-                <span className="truncate">{data.documentType}</span>
-              </div>
-            )}
+    <div className="relative">
+      <div className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border w-[300px] bg-background transition-all duration-200",
+        "hover:scale-[1.02] hover:cursor-pointer",
+        selected ? "ring-2 ring-primary" : "hover:shadow-xl"
+      )}>
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+        <NodeMenu nodeId={id} />
+        <NodeHeader 
+          icon={FileText} 
+          title={data.title || 'Document'} 
+          type="Document"
+          id={id}
+        />
+        {(data.documentName || data.documentType) && (
+          <div className="px-4 pb-4">
+            <div className="h-px bg-border mb-3" />
+            <div className="text-sm text-muted-foreground space-y-1">
+              {data.documentName && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium flex-shrink-0">Document:</span>
+                  <span className="truncate">{data.documentName}</span>
+                </div>
+              )}
+              {data.documentType && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium flex-shrink-0">Type:</span>
+                  <span className="truncate">{data.documentType}</span>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className={handleStyles}
-        style={{ top: parseInt(headerHeight) / 2 }}
-      />
+        )}
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+      </div>
+      <AddNodeButton nodeId={id} />
+    </div>
+  );
+}
+
+export function PaymentNode({ data, id, selected }: { data: any, id: string, selected?: boolean }) {
+  return (
+    <div className="relative">
+      <div className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border w-[300px] bg-background transition-all duration-200",
+        "hover:scale-[1.02] hover:cursor-pointer",
+        selected ? "ring-2 ring-primary" : "hover:shadow-xl"
+      )}>
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+        <NodeMenu nodeId={id} />
+        <NodeHeader 
+          icon={CreditCard} 
+          title={data.title || 'Payment'} 
+          type="Payment"
+          id={id}
+        />
+        {(data.amount || data.description) && (
+          <div className="px-4 pb-4">
+            <div className="h-px bg-border mb-3" />
+            <div className="text-sm text-muted-foreground space-y-1">
+              {data.amount && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium flex-shrink-0">Amount:</span>
+                  <span className="truncate">{data.currency} {data.amount}</span>
+                </div>
+              )}
+              {data.description && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium flex-shrink-0">Description:</span>
+                  <span className="truncate">{data.description}</span>
+                </div>
+              )}
+              {data.enable_discount && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium flex-shrink-0">Discounts:</span>
+                  <span className="truncate">Enabled</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className={handleStyles}
+          style={{ top: parseInt(headerHeight) / 2 }}
+        />
+      </div>
+      <AddNodeButton nodeId={id} />
     </div>
   );
 }
@@ -614,9 +713,8 @@ export const nodeTypes = {
   text: TextNode,
   video: VideoNode,
   form: FormNode,
-  file_upload: FileUploadNode,
   contract_esign: ContractNode,
   scheduling: SchedulingNode,
-  feedback: FeedbackNode,
   document_embed: DocumentNode,
+  payment: PaymentNode,
 }; 
