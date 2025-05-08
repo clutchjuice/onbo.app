@@ -47,15 +47,15 @@ export const useWorkflowStore = create<State>((set, get) => ({
   ...initialState,
   onNodesChange: (changes) => {
     const newNodes = applyNodeChanges(changes, get().nodes);
-    // Only mark as unsaved if there are non-selection changes
-    const hasNonSelectionChanges = changes.some(change => 
-      change.type !== 'select' && change.type !== 'position'
+    // Only mark as unsaved if there are actual content changes
+    const hasContentChanges = changes.some(change =>
+      ["remove", "add", "update", "replace", "reset", "data"].includes(change.type)
     );
-    if (hasNonSelectionChanges) {
-    set({
+    if (hasContentChanges) {
+      set({
         nodes: newNodes,
         hasUnsavedChanges: true
-    });
+      });
     } else {
       set({ nodes: newNodes });
     }

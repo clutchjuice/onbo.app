@@ -113,6 +113,13 @@ export default function WorkflowBuilder() {
     on_complete: false,
     on_step_complete: false
   });
+  const [lastSavedWorkflowTitle, setLastSavedWorkflowTitle] = useState('');
+  const [lastSavedWorkflowDescription, setLastSavedWorkflowDescription] = useState('');
+  const [lastSavedWorkflowStatus, setLastSavedWorkflowStatus] = useState<'draft' | 'published'>('draft');
+  const [lastSavedBranding, setLastSavedBranding] = useState({ logo_url: '', brand_color: '', custom_domain: '' });
+  const [lastSavedFlowBehavior, setLastSavedFlowBehavior] = useState({ allow_back_navigation: true, show_progress_indicator: true, save_progress: false, completion_deadline: null as string | null });
+  const [lastSavedAccessSecurity, setLastSavedAccessSecurity] = useState({ require_verification: false, access_type: 'public', password_protection: { enabled: false, password: '' } });
+  const [lastSavedNotifications, setLastSavedNotifications] = useState({ on_start: false, on_complete: false, on_step_complete: false });
 
   // Handle browser back/forward/close
   useEffect(() => {
@@ -213,6 +220,15 @@ export default function WorkflowBuilder() {
       setTimeout(() => {
         flowRef.current?.fitView({ padding: 0.2, includeHiddenNodes: true });
       }, 100);
+
+      // Update last saved state on workflow load or save (use workflow object directly)
+      setLastSavedWorkflowTitle(workflow.name || 'Untitled Workflow');
+      setLastSavedWorkflowDescription(workflow.description || '');
+      setLastSavedWorkflowStatus(workflow.status || 'draft');
+      setLastSavedBranding(workflow.branding || { logo_url: '', brand_color: '', custom_domain: '' });
+      setLastSavedFlowBehavior(workflow.flow_behavior || { allow_back_navigation: true, show_progress_indicator: true, save_progress: false, completion_deadline: null });
+      setLastSavedAccessSecurity(workflow.access_security || { require_verification: false, access_type: 'public', password_protection: { enabled: false, password: '' } });
+      setLastSavedNotifications(workflow.notifications || { on_start: false, on_complete: false, on_step_complete: false });
     } catch (error) {
       console.error('Error:', error);
       toast.error('An unexpected error occurred');
@@ -239,6 +255,7 @@ export default function WorkflowBuilder() {
       }
 
       setWorkflowTitle(newTitle);
+      setLastSavedWorkflowTitle(newTitle);
       toast.success('Workflow title updated');
     } catch (error) {
       console.error('Error:', error);
@@ -316,6 +333,15 @@ export default function WorkflowBuilder() {
         toast.error('Failed to save workflow');
         return;
       }
+
+      // Update last saved state after successful save
+      setLastSavedWorkflowTitle(workflowTitle);
+      setLastSavedWorkflowDescription(workflowDescription);
+      setLastSavedWorkflowStatus(workflowStatus);
+      setLastSavedBranding(branding);
+      setLastSavedFlowBehavior(flowBehavior);
+      setLastSavedAccessSecurity(accessSecurity);
+      setLastSavedNotifications(notifications);
 
       markChangesSaved();
       toast.success('Workflow saved successfully');
@@ -552,6 +578,20 @@ export default function WorkflowBuilder() {
     loadWorkflow();
   }, [loadWorkflow]);
 
+  // On tab switch to settings, reset local state to last saved values
+  useEffect(() => {
+    if (activeView === 'settings') {
+      setWorkflowTitle(lastSavedWorkflowTitle);
+      setWorkflowDescription(lastSavedWorkflowDescription);
+      setWorkflowStatus(lastSavedWorkflowStatus);
+      setBranding(lastSavedBranding);
+      setFlowBehavior(lastSavedFlowBehavior);
+      setAccessSecurity(lastSavedAccessSecurity);
+      setNotifications(lastSavedNotifications);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView]);
+
   return (
     <div className="h-screen flex flex-col">
       <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -767,8 +807,13 @@ export default function WorkflowBuilder() {
                         <Input
                           value={workflowTitle}
                           onChange={e => {
-                            setWorkflowTitle(e.target.value);
-                            useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            const newValue = e.target.value;
+                            setWorkflowTitle(newValue);
+                            if (newValue !== lastSavedWorkflowTitle) {
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            } else {
+                              useWorkflowStore.setState({ hasUnsavedChanges: false });
+                            }
                           }}
                           onBlur={() => updateWorkflowTitle(workflowTitle)}
                         />
@@ -779,9 +824,14 @@ export default function WorkflowBuilder() {
                         <Textarea
                           placeholder="Describe the purpose of this workflow..."
                           value={workflowDescription}
-                onChange={e => {
-                            setWorkflowDescription(e.target.value);
-                            useWorkflowStore.setState({ hasUnsavedChanges: true });
+                          onChange={e => {
+                            const newValue = e.target.value;
+                            setWorkflowDescription(newValue);
+                            if (newValue !== lastSavedWorkflowDescription) {
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            } else {
+                              useWorkflowStore.setState({ hasUnsavedChanges: false });
+                            }
                           }}
                           className="min-h-[100px]"
                         />
@@ -791,7 +841,12 @@ export default function WorkflowBuilder() {
                         <Label>Workflow Status</Label>
                         <RadioGroup
                           value={workflowStatus}
-                          onValueChange={(value: 'draft' | 'published') => setWorkflowStatus(value)}
+                          onValueChange={(value: 'draft' | 'published') => {
+                            if (value !== workflowStatus) {
+                              setWorkflowStatus(value);
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                           className="flex gap-4"
                         >
                           <div className="flex items-center space-x-2">
@@ -828,7 +883,15 @@ export default function WorkflowBuilder() {
                           <Input
                             placeholder="Enter logo URL"
                             value={branding.logo_url}
-                            onChange={e => setBranding(prev => ({ ...prev, logo_url: e.target.value }))}
+                            onChange={e => {
+                              const newValue = e.target.value;
+                              setBranding(prev => ({ ...prev, logo_url: newValue }));
+                              if (newValue !== lastSavedBranding.logo_url) {
+                                useWorkflowStore.setState({ hasUnsavedChanges: true });
+                              } else {
+                                useWorkflowStore.setState({ hasUnsavedChanges: false });
+                              }
+                            }}
                           />
                           <Button variant="outline" size="sm">Upload</Button>
                         </div>
@@ -840,7 +903,15 @@ export default function WorkflowBuilder() {
                           type="color"
                           className="h-10"
                           value={branding.brand_color || '#000000'}
-                          onChange={e => setBranding(prev => ({ ...prev, brand_color: e.target.value }))}
+                          onChange={e => {
+                            const newValue = e.target.value;
+                            setBranding(prev => ({ ...prev, brand_color: newValue }));
+                            if (newValue !== lastSavedBranding.brand_color) {
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            } else {
+                              useWorkflowStore.setState({ hasUnsavedChanges: false });
+                            }
+                          }}
                         />
                       </div>
 
@@ -849,7 +920,15 @@ export default function WorkflowBuilder() {
                         <Input
                           placeholder="your-domain.com"
                           value={branding.custom_domain}
-                          onChange={e => setBranding(prev => ({ ...prev, custom_domain: e.target.value }))}
+                          onChange={e => {
+                            const newValue = e.target.value;
+                            setBranding(prev => ({ ...prev, custom_domain: newValue }));
+                            if (newValue !== lastSavedBranding.custom_domain) {
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            } else {
+                              useWorkflowStore.setState({ hasUnsavedChanges: false });
+                            }
+                          }}
                         />
                       </div>
                     </div>
@@ -877,7 +956,12 @@ export default function WorkflowBuilder() {
                         </div>
                         <Switch
                           checked={flowBehavior.allow_back_navigation}
-                          onCheckedChange={checked => setFlowBehavior(prev => ({ ...prev, allow_back_navigation: checked }))}
+                          onCheckedChange={checked => {
+                            if (checked !== flowBehavior.allow_back_navigation) {
+                              setFlowBehavior(prev => ({ ...prev, allow_back_navigation: checked }));
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         />
                       </div>
 
@@ -888,7 +972,12 @@ export default function WorkflowBuilder() {
                         </div>
                         <Switch
                           checked={flowBehavior.show_progress_indicator}
-                          onCheckedChange={checked => setFlowBehavior(prev => ({ ...prev, show_progress_indicator: checked }))}
+                          onCheckedChange={checked => {
+                            if (checked !== flowBehavior.show_progress_indicator) {
+                              setFlowBehavior(prev => ({ ...prev, show_progress_indicator: checked }));
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         />
                       </div>
 
@@ -899,7 +988,12 @@ export default function WorkflowBuilder() {
                         </div>
                         <Switch
                           checked={flowBehavior.save_progress}
-                          onCheckedChange={checked => setFlowBehavior(prev => ({ ...prev, save_progress: checked }))}
+                          onCheckedChange={checked => {
+                            if (checked !== flowBehavior.save_progress) {
+                              setFlowBehavior(prev => ({ ...prev, save_progress: checked }));
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         />
                       </div>
 
@@ -909,7 +1003,13 @@ export default function WorkflowBuilder() {
                         <Input
                           type="datetime-local"
                           value={flowBehavior.completion_deadline || ''}
-                          onChange={e => setFlowBehavior(prev => ({ ...prev, completion_deadline: e.target.value }))}
+                          onChange={e => {
+                            const newValue = e.target.value;
+                            setFlowBehavior(prev => ({ ...prev, completion_deadline: newValue }));
+                            if (newValue !== flowBehavior.completion_deadline) {
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         />
                       </div>
                     </div>
@@ -937,7 +1037,12 @@ export default function WorkflowBuilder() {
                         </div>
                         <Switch
                           checked={accessSecurity.require_verification}
-                          onCheckedChange={checked => setAccessSecurity(prev => ({ ...prev, require_verification: checked }))}
+                          onCheckedChange={checked => {
+                            if (checked !== accessSecurity.require_verification) {
+                              setAccessSecurity(prev => ({ ...prev, require_verification: checked }));
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         />
                       </div>
 
@@ -945,7 +1050,12 @@ export default function WorkflowBuilder() {
                         <Label>Limit Access To</Label>
                         <Select
                           value={accessSecurity.access_type}
-                          onValueChange={value => setAccessSecurity(prev => ({ ...prev, access_type: value }))}
+                          onValueChange={value => {
+                            if (value !== accessSecurity.access_type) {
+                              setAccessSecurity(prev => ({ ...prev, access_type: value }));
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -965,13 +1075,18 @@ export default function WorkflowBuilder() {
                           </div>
                           <Switch
                             checked={accessSecurity.password_protection.enabled}
-                            onCheckedChange={checked => setAccessSecurity(prev => ({
-                              ...prev,
-                              password_protection: {
-                                ...prev.password_protection,
-                                enabled: checked
+                            onCheckedChange={checked => {
+                              if (checked !== accessSecurity.password_protection.enabled) {
+                                setAccessSecurity(prev => ({
+                                  ...prev,
+                                  password_protection: {
+                                    ...prev.password_protection,
+                                    enabled: checked
+                                  }
+                                }));
+                                useWorkflowStore.setState({ hasUnsavedChanges: true });
                               }
-                            }))}
+                            }}
                           />
                         </div>
                         {accessSecurity.password_protection.enabled && (
@@ -979,13 +1094,19 @@ export default function WorkflowBuilder() {
                             type="password"
                             placeholder="Enter password"
                             value={accessSecurity.password_protection.password}
-                            onChange={e => setAccessSecurity(prev => ({
-                              ...prev,
-                              password_protection: {
-                                ...prev.password_protection,
-                                password: e.target.value
+                            onChange={e => {
+                              const newValue = e.target.value;
+                              setAccessSecurity(prev => ({
+                                ...prev,
+                                password_protection: {
+                                  ...prev.password_protection,
+                                  password: newValue
+                                }
+                              }));
+                              if (newValue !== accessSecurity.password_protection.password) {
+                                useWorkflowStore.setState({ hasUnsavedChanges: true });
                               }
-                            }))}
+                            }}
                             className="mt-2"
                           />
                         )}
@@ -1015,7 +1136,12 @@ export default function WorkflowBuilder() {
                         </div>
                         <Switch
                           checked={notifications.on_start}
-                          onCheckedChange={checked => setNotifications(prev => ({ ...prev, on_start: checked }))}
+                          onCheckedChange={checked => {
+                            if (checked !== notifications.on_start) {
+                              setNotifications(prev => ({ ...prev, on_start: checked }));
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         />
                       </div>
 
@@ -1026,7 +1152,12 @@ export default function WorkflowBuilder() {
                         </div>
                         <Switch
                           checked={notifications.on_complete}
-                          onCheckedChange={checked => setNotifications(prev => ({ ...prev, on_complete: checked }))}
+                          onCheckedChange={checked => {
+                            if (checked !== notifications.on_complete) {
+                              setNotifications(prev => ({ ...prev, on_complete: checked }));
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         />
                       </div>
 
@@ -1037,7 +1168,12 @@ export default function WorkflowBuilder() {
                         </div>
                         <Switch
                           checked={notifications.on_step_complete}
-                          onCheckedChange={checked => setNotifications(prev => ({ ...prev, on_step_complete: checked }))}
+                          onCheckedChange={checked => {
+                            if (checked !== notifications.on_step_complete) {
+                              setNotifications(prev => ({ ...prev, on_step_complete: checked }));
+                              useWorkflowStore.setState({ hasUnsavedChanges: true });
+                            }
+                          }}
                         />
                       </div>
                     </div>
