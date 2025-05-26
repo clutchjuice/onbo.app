@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { FileUpload } from '@/components/ui/file-upload';
 import * as Icons from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BlurFade } from '@/components/ui/blur-fade';
 
 interface FormField {
   id: string;
@@ -238,30 +239,26 @@ export function FormStep({ config, onComplete, response }: FormStepProps) {
         } else if (field.displayStyle === 'radio' && field.options) {
           return (
             <RadioGroup
-              value={formData[field.id] || ''}
+              value={typeof formData[field.id] === 'string' ? formData[field.id] : ''}
               onValueChange={value => handleChange(field.id, value)}
-              className="flex flex-col space-y-3"
+              className="flex flex-col gap-2 mt-2"
             >
               {field.options.map((option, index) => (
-                <div key={index} className="flex items-start space-x-3">
+                <div key={index} className="flex items-center gap-3 py-1">
                   <RadioGroupItem
-                    value={option.value}
+                    value={option.value || `option-${index}`}
                     id={`${field.id}-${index}`}
-                    className="mt-1"
+                    className="mt-0.5"
                   />
-                  <div className="flex-1">
-                    <Label
-                      htmlFor={`${field.id}-${index}`}
-                      className="text-base font-medium cursor-pointer"
-                    >
-                      {option.label}
-                    </Label>
-                    {option.subtext && (
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        {option.subtext}
-                      </p>
-                    )}
-                  </div>
+                  <Label
+                    htmlFor={`${field.id}-${index}`}
+                    className="text-base font-medium cursor-pointer"
+                  >
+                    {option.label}
+                  </Label>
+                  {option.subtext && (
+                    <span className="text-sm text-muted-foreground ml-2">{option.subtext}</span>
+                  )}
                 </div>
               ))}
             </RadioGroup>
@@ -344,47 +341,24 @@ export function FormStep({ config, onComplete, response }: FormStepProps) {
   }
 
   return (
-    <div className="space-y-8 py-8">
-      {safeConfig.header && (
-        <div className="space-y-2">
-          <h2 className="text-3xl font-bold tracking-tight">
-            {safeConfig.header}
-          </h2>
-          {safeConfig.description && (
-            <p className="text-muted-foreground text-lg">
-              {safeConfig.description}
-            </p>
-          )}
-        </div>
-      )}
-
-      <div className="space-y-6">
+    <BlurFade>
+      <form className="max-w-2xl mx-auto px-4 py-8 h-full flex flex-col gap-10" autoComplete="off" onSubmit={e => e.preventDefault()}>
+        {safeConfig.header && (
+          <h2 className="text-2xl font-semibold mb-4">{safeConfig.header}</h2>
+        )}
+        {safeConfig.description && (
+          <p className="text-muted-foreground mb-4">{safeConfig.description}</p>
+        )}
         {safeConfig.fields.map(field => (
-          <div key={field.id} className="space-y-3">
-            {field.type !== 'checkbox' && (
-              <Label htmlFor={field.id} className="text-base font-medium">
-                {field.label}
-                {field.required && <span className="text-destructive ml-1">*</span>}
-              </Label>
+          <div key={field.id} className="flex flex-col gap-4">
+            <Label htmlFor={field.id} className="mb-3 text-lg font-semibold">{field.label}{field.required && <span className="text-destructive">*</span>}</Label>
+            {renderField(field)}
+            {shouldShowError(field.id) && (
+              <span className="text-destructive text-xs mt-1">{errors[field.id]}</span>
             )}
-            <div className="relative">
-              {renderField(field)}
-              {shouldShowError(field.id) && (
-                <p className="absolute -bottom-6 left-0 text-sm text-destructive flex items-center gap-1.5">
-                  <svg
-                    viewBox="0 0 16 16"
-                    className="h-4 w-4 fill-current"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path d="M8 0C3.6 0 0 3.6 0 8s3.6 8 8 8 8-3.6 8-8-3.6-8-8-8zm0 12c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm1-3H7V4h2v5z"/>
-                  </svg>
-                  {errors[field.id]}
-                </p>
-              )}
-            </div>
           </div>
         ))}
-      </div>
-    </div>
+      </form>
+    </BlurFade>
   );
 } 

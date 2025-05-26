@@ -5,13 +5,15 @@ interface NavigationControlsProps {
   onBack: () => void;
   canGoBack: boolean;
   isLastStep: boolean;
+  buttonColor?: string;
 }
 
 export function NavigationControls({
   onNext,
   onBack,
   canGoBack,
-  isLastStep
+  isLastStep,
+  buttonColor = '#2563eb',
 }: NavigationControlsProps) {
   return (
     <div className="mt-4 flex items-center justify-center gap-4 pb-8">
@@ -28,9 +30,8 @@ export function NavigationControls({
       )}
       <Button
         onClick={onNext}
-        className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full text-base font-medium
-          transition-all duration-200 ease-in-out hover:scale-105 hover:shadow-md
-          active:scale-95"
+        className="text-white px-8 py-3 rounded-full text-base font-medium transition-all duration-200 ease-in-out hover:scale-105 hover:shadow-md active:scale-95"
+        style={{ background: buttonColor, border: 'none' }}
       >
         {isLastStep ? 'Complete' : 'Next'}
       </Button>

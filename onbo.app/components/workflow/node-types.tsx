@@ -492,6 +492,7 @@ export function FormNode({ data, id, selected }: { data: any, id: string, select
                       {field.type === 'textarea' && 'Paragraph'}
                       {field.type === 'number' && 'Number'}
                       {field.type === 'dropdown' && 'Dropdown'}
+                      {field.type === 'select' && 'Select'}
                     )</span>
                   </div>
                 ))}

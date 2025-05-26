@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { BlurFade } from '@/components/ui/blur-fade';
 
 interface VideoStepConfig {
   header?: string;
@@ -39,62 +40,58 @@ export function VideoStep({ config, onComplete, response }: VideoStepProps) {
 
   if (config.source_type === 'embed' && config.embed_code) {
     return (
-      <div className="space-y-6 py-8">
-        {config.header && (
-          <h2 className="text-2xl font-semibold tracking-tight">
-            {config.header}
-          </h2>
-        )}
-        {config.description && (
-          <p className="text-muted-foreground">
-            {config.description}
-          </p>
-        )}
-        <div className="relative w-full pb-[56.25%]">
-          <div 
-            className="absolute inset-0"
-            dangerouslySetInnerHTML={{ 
-              __html: config.embed_code.replace(
-                /<iframe/g, 
-                '<iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"'
-              ) 
-            }}
-          />
+      <BlurFade>
+        <div className="max-w-2xl mx-auto px-4 py-8 h-full flex flex-col items-center justify-center text-center">
+          {config.header && (
+            <h2 className="text-2xl font-semibold mb-4">{config.header}</h2>
+          )}
+          {config.description && (
+            <p className="text-muted-foreground mb-4">{config.description}</p>
+          )}
+          <div className="relative w-full pb-[56.25%]">
+            <div 
+              className="absolute inset-0"
+              dangerouslySetInnerHTML={{ 
+                __html: config.embed_code.replace(
+                  /<iframe/g, 
+                  '<iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;"'
+                ) 
+              }}
+            />
+          </div>
         </div>
-      </div>
+      </BlurFade>
     );
   }
 
   if (config.source_type === 'url' && config.url) {
     return (
-      <div className="space-y-6 py-8">
-        {config.header && (
-          <h2 className="text-2xl font-semibold tracking-tight">
-            {config.header}
-          </h2>
-        )}
-        {config.description && (
-          <p className="text-muted-foreground">
-            {config.description}
-          </p>
-        )}
-        <div className="w-full aspect-video rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800">
-          <video
-            ref={videoRef}
-            src={config.url}
-            className="w-full h-full"
-            controls
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onTimeUpdate={handleTimeUpdate}
-          />
-        </div>
-        {config.require_completion && !response?.watched && (
-          <div className="text-sm text-muted-foreground">
-            Please watch the video to continue
+      <BlurFade>
+        <div className="max-w-2xl mx-auto px-4 py-8 h-full flex flex-col items-center justify-center text-center">
+          {config.header && (
+            <h2 className="text-2xl font-semibold mb-4">{config.header}</h2>
+          )}
+          {config.description && (
+            <p className="text-muted-foreground mb-4">{config.description}</p>
+          )}
+          <div className="w-full aspect-video rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800">
+            <video
+              ref={videoRef}
+              src={config.url}
+              className="w-full h-full"
+              controls
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onTimeUpdate={handleTimeUpdate}
+            />
           </div>
-        )}
-      </div>
+          {config.require_completion && !response?.watched && (
+            <div className="text-sm text-muted-foreground">
+              Please watch the video to continue
+            </div>
+          )}
+        </div>
+      </BlurFade>
     );
   }
 

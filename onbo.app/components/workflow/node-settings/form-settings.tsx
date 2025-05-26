@@ -64,6 +64,7 @@ export function FormSettings({ data, onChange }: FormSettingsProps) {
   }, [data]);
 
   const [openFields, setOpenFields] = useState<string[]>([]);
+  const [openOption, setOpenOption] = useState<string | null>(null);
 
   const toggleField = (fieldId: string) => {
     setOpenFields(prev => 
@@ -334,68 +335,82 @@ export function FormSettings({ data, onChange }: FormSettingsProps) {
                               </div>
                               <div className="space-y-3">
                                 {field.options?.map((option, optionIndex) => (
-                                  <div 
-                                    key={optionIndex} 
+                                  <Collapsible
+                                    key={optionIndex}
+                                    open={openOption === `${fieldIndex}-${optionIndex}`}
+                                    onOpenChange={() => setOpenOption(openOption === `${fieldIndex}-${optionIndex}` ? null : `${fieldIndex}-${optionIndex}`)}
                                     className={cn(
-                                      "space-y-3 border rounded-lg p-3",
-                                      "hover:border-primary/20"
+                                      "border rounded-lg transition-all duration-200",
+                                      openOption === `${fieldIndex}-${optionIndex}` ? "bg-muted/30" : "bg-background"
                                     )}
                                   >
-                                    <div className="flex items-center justify-between">
-                                      <Label className="text-sm text-muted-foreground">Option {optionIndex + 1}</Label>
+                                    <div className="flex items-center">
+                                      <CollapsibleTrigger className="flex items-center flex-1 p-3 text-left">
+                                        <ChevronDown
+                                          className={cn(
+                                            "h-4 w-4 text-muted-foreground transition-transform duration-200 mr-2",
+                                            openOption === `${fieldIndex}-${optionIndex}` ? "rotate-180" : ""
+                                          )}
+                                        />
+                                        <span className="font-medium">
+                                          {option.label || `Option ${optionIndex + 1}`}
+                                        </span>
+                                      </CollapsibleTrigger>
                                       <Button
                                         variant="ghost"
                                         size="icon"
                                         onClick={() => removeOption(fieldIndex, optionIndex)}
-                                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                        className="h-8 w-8 text-muted-foreground hover:text-destructive mr-2"
                                       >
                                         <Trash2 className="h-4 w-4" />
                                       </Button>
                                     </div>
-                                    <div className="space-y-3">
-                                      <div>
-                                        <Input
-                                          value={option.label}
-                                          onChange={(e) => handleOptionChange(fieldIndex, optionIndex, 'label', e.target.value)}
-                                          placeholder="Enter option label"
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                          The text shown to the user
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <Input
-                                          value={option.value}
-                                          onChange={(e) => handleOptionChange(fieldIndex, optionIndex, 'value', e.target.value)}
-                                          placeholder="Enter option value"
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                          The value stored when this option is selected
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <Input
-                                          value={option.subtext || ''}
-                                          onChange={(e) => handleOptionChange(fieldIndex, optionIndex, 'subtext', e.target.value)}
-                                          placeholder="Enter option description (optional)"
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                          Additional description shown below the option
-                                        </p>
-                                      </div>
-                                      {(field.displayStyle === 'grid-card' || field.displayStyle === 'list-card') && (
+                                    <CollapsibleContent>
+                                      <div className="space-y-3 p-3 border-t">
                                         <div>
-                                          <IconSelect
-                                            value={option.icon || ''}
-                                            onChange={(value) => handleOptionChange(fieldIndex, optionIndex, 'icon', value)}
+                                          <Input
+                                            value={option.label}
+                                            onChange={e => handleOptionChange(fieldIndex, optionIndex, 'label', e.target.value)}
+                                            placeholder="Enter option label"
                                           />
                                           <p className="text-xs text-muted-foreground mt-1">
-                                            Icon shown with the option
+                                            The text shown to the user
                                           </p>
                                         </div>
-                                      )}
-                                    </div>
-                                  </div>
+                                        <div>
+                                          <Input
+                                            value={option.value}
+                                            onChange={e => handleOptionChange(fieldIndex, optionIndex, 'value', e.target.value)}
+                                            placeholder="Enter option value"
+                                          />
+                                          <p className="text-xs text-muted-foreground mt-1">
+                                            The value stored when this option is selected
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <Input
+                                            value={option.subtext || ''}
+                                            onChange={e => handleOptionChange(fieldIndex, optionIndex, 'subtext', e.target.value)}
+                                            placeholder="Enter option description (optional)"
+                                          />
+                                          <p className="text-xs text-muted-foreground mt-1">
+                                            Additional description shown below the option
+                                          </p>
+                                        </div>
+                                        {(field.displayStyle === 'grid-card' || field.displayStyle === 'list-card') && (
+                                          <div>
+                                            <IconSelect
+                                              value={option.icon || ''}
+                                              onChange={value => handleOptionChange(fieldIndex, optionIndex, 'icon', value)}
+                                            />
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                              Icon shown with the option
+                                            </p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </CollapsibleContent>
+                                  </Collapsible>
                                 ))}
                               </div>
                             </div>

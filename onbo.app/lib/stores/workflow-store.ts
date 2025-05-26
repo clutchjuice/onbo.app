@@ -52,10 +52,10 @@ export const useWorkflowStore = create<State>((set, get) => ({
       ["remove", "add", "update", "replace", "reset", "data"].includes(change.type)
     );
     if (hasContentChanges) {
-      set({
+    set({
         nodes: newNodes,
         hasUnsavedChanges: true
-      });
+    });
     } else {
       set({ nodes: newNodes });
     }

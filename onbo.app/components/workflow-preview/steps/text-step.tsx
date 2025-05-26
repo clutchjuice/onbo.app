@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { BlurFade } from '@/components/ui/blur-fade';
 
 interface TextStepConfig {
   header?: string;
@@ -58,13 +59,15 @@ export function TextStep({ config, onComplete, response }: TextStepProps) {
   }, [config.auto_advance]);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 h-full flex flex-col items-center justify-center text-center">
-      {config.header && (
-        <h2 className="text-2xl font-semibold mb-4">{config.header}</h2>
-      )}
-      {config.subheader && (
-        <p className="text-muted-foreground">{config.subheader}</p>
-      )}
-    </div>
+    <BlurFade>
+      <div className="max-w-2xl mx-auto px-4 py-8 h-full flex flex-col items-center justify-center text-center">
+        {config.header && (
+          <h2 className="text-2xl font-semibold mb-4">{config.header}</h2>
+        )}
+        {config.subheader && (
+          <p className="text-muted-foreground">{config.subheader}</p>
+        )}
+      </div>
+    </BlurFade>
   );
 } 

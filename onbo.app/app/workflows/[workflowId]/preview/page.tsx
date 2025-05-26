@@ -74,9 +74,23 @@ export default function WorkflowPreview() {
     );
   }
 
+  // Map draft columns for preview
+  const previewWorkflow = {
+    ...workflow,
+    steps: workflow.draft_steps || [],
+    flow_behavior: workflow.draft_flow_behavior || {},
+    branding: workflow.draft_branding || {},
+    access_security: workflow.draft_access_security || {},
+    notifications: workflow.draft_notifications || {},
+    name: workflow.draft_name || '',
+    description: workflow.draft_description || '',
+    status: workflow.draft_status || '',
+    connections: workflow.draft_connections || [],
+  };
+
   return (
-    <PreviewLayout>
-      <PreviewController workflow={workflow} />
+    <PreviewLayout branding={previewWorkflow.branding}>
+      <PreviewController workflow={previewWorkflow} />
     </PreviewLayout>
   );
 } 

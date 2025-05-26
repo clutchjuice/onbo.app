@@ -15,7 +15,7 @@ import { useWorkflowStore } from '@/lib/stores/workflow-store';
 import { createClient } from '@/utils/supabase/client';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Eye, Pencil, Save, Upload, Plus, Settings, Palette, GitBranch, Shield, Bell } from 'lucide-react';
+import { ArrowLeft, Eye, Pencil, Save, Upload, Plus, Settings, Palette, GitBranch, Shield, Bell, Copy } from 'lucide-react';
 import Link from 'next/link';
 import { nodeTypes } from '@/components/workflow/node-types';
 import { edgeTypes } from '@/components/workflow/edge-types';
@@ -26,13 +26,21 @@ import { cn } from '@/lib/utils';
 import { StepPicker } from '@/components/workflow/step-picker';
 import { PlusButton } from '@/components/workflow/plus-button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { NodeSettings } from '@/components/workflow/node-settings';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FileUpload } from '@/components/ui/file-upload';
+import { ColorField } from '@/components/ui/color-field';
+import Image from 'next/image';
+import { StepRenderer } from '@/components/workflow-preview/step-renderer';
+import { BuilderView } from './views/BuilderView';
+import { SettingsView } from './views/SettingsView';
+import { StyleView } from './views/StyleView';
+import { ShareView } from './views/ShareView';
 
 function EmptyWorkflowState() {
   return (
@@ -53,6 +61,77 @@ function EmptyWorkflowState() {
       </div>
     </div>
   );
+}
+
+// Utility to hash a string using SHA-256
+async function hashString(str: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Utility to check if a string is a SHA-256 hash
+function isSHA256(str: string) {
+  return /^[a-f0-9]{64}$/i.test(str);
+}
+
+// Utility to deeply compare two values
+function deepEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!bKeys.includes(key)) return false;
+    if (!deepEqual(a[key], b[key])) return false;
+  }
+  return true;
+}
+
+// Utility to compare draft and published workflow fields using deepEqual
+function isDraftDifferentFromPublished(workflow: any) {
+  if (!workflow) return false;
+  const fields = [
+    'name', 'description', 'steps', 'connections', 'branding', 'flow_behavior', 'access_security', 'notifications'
+  ];
+  for (const field of fields) {
+    const draft = workflow[`draft_${field}`];
+    const published = workflow[`published_${field}`];
+    if (!deepEqual(draft, published)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Update defaultBranding to match new design
+const defaultBranding = {
+  logo_url: '',
+  brand_color: '',
+  custom_domain: '',
+  accent: '#2563eb', // blue for progress bar
+  gradient1: '#fff',
+  gradient2: '#fff',
+  primaryText: '#232A41',
+  secondaryText: '#5E777E',
+  background: '#fff',
+  buttonColor: '#2563eb', // blue for button
+  theme: '',
+};
+
+function mergeBranding(branding: any) {
+  return { ...defaultBranding, ...branding };
 }
 
 export default function WorkflowBuilder() {
@@ -81,7 +160,7 @@ export default function WorkflowBuilder() {
   const [isLoading, setIsLoading] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<ReactFlowInstance | null>(null);
-  const [activeView, setActiveView] = useState<'builder' | 'settings' | 'style'>('builder');
+  const [activeView, setActiveView] = useState<'builder' | 'settings' | 'style' | 'share'>('builder');
   const [workflowDescription, setWorkflowDescription] = useState('');
   const [requireAuth, setRequireAuth] = useState(false);
   const [allowMultipleSubmissions, setAllowMultipleSubmissions] = useState(false);
@@ -92,7 +171,15 @@ export default function WorkflowBuilder() {
   const [branding, setBranding] = useState({
     logo_url: '',
     brand_color: '',
-    custom_domain: ''
+    custom_domain: '',
+    accent: '#E38C00',
+    gradient1: '#DDCFC3',
+    gradient2: '#886C5A',
+    primaryText: '#232A41',
+    secondaryText: '#5E777E',
+    background: '#F6F6F6',
+    buttonColor: '#E38C00',
+    theme: '',
   });
   const [flowBehavior, setFlowBehavior] = useState({
     allow_back_navigation: true,
@@ -116,10 +203,15 @@ export default function WorkflowBuilder() {
   const [lastSavedWorkflowTitle, setLastSavedWorkflowTitle] = useState('');
   const [lastSavedWorkflowDescription, setLastSavedWorkflowDescription] = useState('');
   const [lastSavedWorkflowStatus, setLastSavedWorkflowStatus] = useState<'draft' | 'published'>('draft');
-  const [lastSavedBranding, setLastSavedBranding] = useState({ logo_url: '', brand_color: '', custom_domain: '' });
+  const [lastSavedBranding, setLastSavedBranding] = useState({ logo_url: '', brand_color: '', custom_domain: '', accent: '#E38C00', gradient1: '#DDCFC3', gradient2: '#886C5A', primaryText: '#232A41', secondaryText: '#5E777E', background: '#F6F6F6', buttonColor: '#E38C00', theme: '' });
   const [lastSavedFlowBehavior, setLastSavedFlowBehavior] = useState({ allow_back_navigation: true, show_progress_indicator: true, save_progress: false, completion_deadline: null as string | null });
   const [lastSavedAccessSecurity, setLastSavedAccessSecurity] = useState({ require_verification: false, access_type: 'public', password_protection: { enabled: false, password: '' } });
   const [lastSavedNotifications, setLastSavedNotifications] = useState({ on_start: false, on_complete: false, on_step_complete: false });
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [publishLink, setPublishLink] = useState('');
+  const [workflowRecord, setWorkflowRecord] = useState<any>(null);
+  const [showPublishNeedsSaveDialog, setShowPublishNeedsSaveDialog] = useState(false);
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
 
   // Handle browser back/forward/close
   useEffect(() => {
@@ -154,81 +246,50 @@ export default function WorkflowBuilder() {
   const loadWorkflow = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Reset the store to initial state before loading new data
       useWorkflowStore.getState().reset();
-      
       const { data: workflow, error } = await supabase
         .from('workflows')
         .select('*')
         .eq('id', params.workflowId)
         .single();
-
       if (error) {
         console.error('Error loading workflow:', error);
         return;
       }
-
-      setWorkflowTitle(workflow.name || 'Untitled Workflow');
-      setWorkflowStatus(workflow.status || 'draft');
-      setWorkflowDescription(workflow.description || '');
-      setRequireAuth(workflow.require_auth || false);
-      setAllowMultipleSubmissions(workflow.allow_multiple_submissions || false);
-      setSaveProgress(workflow.save_progress || false);
-      setSuccessMessage(workflow.success_message || '');
-      setRedirectUrl(workflow.redirect_url || '');
-      setSendEmailConfirmation(workflow.send_email_confirmation || false);
-      
-      setBranding(workflow.branding || {
-        logo_url: '',
-        brand_color: '',
-        custom_domain: ''
-      });
-      setFlowBehavior(workflow.flow_behavior || {
-        allow_back_navigation: true,
-        show_progress_indicator: true,
-        save_progress: false,
-        completion_deadline: null
-      });
-      setAccessSecurity(workflow.access_security || {
-        require_verification: false,
-        access_type: 'public',
-        password_protection: {
-          enabled: false,
-          password: ''
-        }
-      });
-      setNotifications(workflow.notifications || {
-        on_start: false,
-        on_complete: false,
-        on_step_complete: false
-      });
-      
-      // Ensure all edges have the proper data property
-      const edgesWithData = (workflow.connections || []).map((edge: Edge, index: number) => ({
+      // Use draft columns for editing
+      setWorkflowTitle(workflow.draft_name || 'Untitled Workflow');
+      setWorkflowStatus(workflow.draft_status || 'draft');
+      setWorkflowDescription(workflow.draft_description || '');
+      setRequireAuth(workflow.draft_access_security?.require_verification || false);
+      setAllowMultipleSubmissions(workflow.draft_flow_behavior?.allow_multiple_submissions || false);
+      setSaveProgress(workflow.draft_flow_behavior?.save_progress || false);
+      setSuccessMessage(workflow.draft_notifications?.success_message || '');
+      setRedirectUrl(workflow.draft_notifications?.redirect_url || '');
+      setSendEmailConfirmation(workflow.draft_notifications?.send_email_confirmation || false);
+      setBranding(workflow.draft_branding || { logo_url: '', brand_color: '', custom_domain: '', accent: '#E38C00', gradient1: '#DDCFC3', gradient2: '#886C5A', primaryText: '#232A41', secondaryText: '#5E777E', background: '#F6F6F6', buttonColor: '#E38C00', theme: '' });
+      setFlowBehavior(workflow.draft_flow_behavior || { allow_back_navigation: true, show_progress_indicator: true, save_progress: false, completion_deadline: null });
+      setAccessSecurity(workflow.draft_access_security || { require_verification: false, access_type: 'public', password_protection: { enabled: false, password: '' } });
+      setNotifications(workflow.draft_notifications || { on_start: false, on_complete: false, on_step_complete: false });
+      const edgesWithData = (workflow.draft_connections || []).map((edge: Edge, index: number) => ({
         ...edge,
         type: 'custom',
         data: { onAdd: () => handleAddClick(index + 1) }
       }));
-      
-      // Initialize workflow with a single state update
       useWorkflowStore.getState().initializeWorkflow(
-        workflow.steps || [],
+        workflow.draft_steps || [],
         edgesWithData
       );
-      
-      // Center view after nodes are loaded
       setTimeout(() => {
         flowRef.current?.fitView({ padding: 0.2, includeHiddenNodes: true });
       }, 100);
-
-      // Update last saved state on workflow load or save (use workflow object directly)
-      setLastSavedWorkflowTitle(workflow.name || 'Untitled Workflow');
-      setLastSavedWorkflowDescription(workflow.description || '');
-      setLastSavedWorkflowStatus(workflow.status || 'draft');
-      setLastSavedBranding(workflow.branding || { logo_url: '', brand_color: '', custom_domain: '' });
-      setLastSavedFlowBehavior(workflow.flow_behavior || { allow_back_navigation: true, show_progress_indicator: true, save_progress: false, completion_deadline: null });
-      setLastSavedAccessSecurity(workflow.access_security || { require_verification: false, access_type: 'public', password_protection: { enabled: false, password: '' } });
-      setLastSavedNotifications(workflow.notifications || { on_start: false, on_complete: false, on_step_complete: false });
+      setLastSavedWorkflowTitle(workflow.draft_name || 'Untitled Workflow');
+      setLastSavedWorkflowDescription(workflow.draft_description || '');
+      setLastSavedWorkflowStatus(workflow.draft_status || 'draft');
+      setLastSavedBranding(workflow.draft_branding || { logo_url: '', brand_color: '', custom_domain: '', accent: '#E38C00', gradient1: '#DDCFC3', gradient2: '#886C5A', primaryText: '#232A41', secondaryText: '#5E777E', background: '#F6F6F6', buttonColor: '#E38C00', theme: '' });
+      setLastSavedFlowBehavior(workflow.draft_flow_behavior || { allow_back_navigation: true, show_progress_indicator: true, save_progress: false, completion_deadline: null });
+      setLastSavedAccessSecurity(workflow.draft_access_security || { require_verification: false, access_type: 'public', password_protection: { enabled: false, password: '' } });
+      setLastSavedNotifications(workflow.draft_notifications || { on_start: false, on_complete: false, on_step_complete: false });
+      setWorkflowRecord(workflow);
     } catch (error) {
       console.error('Error:', error);
       toast.error('An unexpected error occurred');
@@ -288,106 +349,123 @@ export default function WorkflowBuilder() {
     }
   }, [isEditingTitle]);
 
+  const unpublishedChanges = useMemo(() => isDraftDifferentFromPublished(workflowRecord), [workflowRecord]);
+  const canPublish = useMemo(() => !hasUnsavedChanges && unpublishedChanges, [hasUnsavedChanges, unpublishedChanges]);
+
   const saveWorkflow = useCallback(async () => {
     try {
+      let accessSec = accessSecurity;
+      // Hash password if enabled and not already hashed
+      if (accessSec.password_protection?.enabled && accessSec.password_protection.password) {
+        if (!isSHA256(accessSec.password_protection.password)) {
+          accessSec = {
+            ...accessSec,
+            password_protection: {
+              ...accessSec.password_protection,
+              password: await hashString(accessSec.password_protection.password)
+            }
+          };
+        }
+      }
       const workflowData = {
-        name: workflowTitle || 'Untitled Workflow',
-        description: workflowDescription || '',
-        status: workflowStatus || 'draft',
-        steps: nodes || [],
-        connections: edges || [],
-        branding: branding || {
-          logo_url: '',
-          brand_color: '',
-          custom_domain: ''
-        },
-        flow_behavior: flowBehavior || {
-          allow_back_navigation: true,
-          show_progress_indicator: true,
-          save_progress: false,
-          completion_deadline: null
-        },
-        access_security: accessSecurity || {
-          require_verification: false,
-          access_type: 'public',
-          password_protection: {
-            enabled: false,
-            password: ''
-          }
-        },
-        notifications: notifications || {
-          on_start: false,
-          on_complete: false,
-          on_step_complete: false
-        },
+        draft_name: workflowTitle || 'Untitled Workflow',
+        draft_description: workflowDescription || '',
+        draft_status: workflowStatus || 'draft',
+        draft_steps: nodes || [],
+        draft_connections: edges || [],
+        draft_branding: mergeBranding(branding),
+        draft_flow_behavior: flowBehavior || { allow_back_navigation: true, show_progress_indicator: true, save_progress: false, completion_deadline: null },
+        draft_access_security: accessSec || { require_verification: false, access_type: 'public', password_protection: { enabled: false, password: '' } },
+        draft_notifications: notifications || { on_start: false, on_complete: false, on_step_complete: false },
         updated_at: new Date().toISOString(),
       };
-
       const { error } = await supabase
         .from('workflows')
         .update(workflowData)
         .eq('id', params.workflowId);
-
       if (error) {
         console.error('Error saving workflow:', error);
         toast.error('Failed to save workflow');
         return;
       }
-
-      // Update last saved state after successful save
       setLastSavedWorkflowTitle(workflowTitle);
       setLastSavedWorkflowDescription(workflowDescription);
       setLastSavedWorkflowStatus(workflowStatus);
       setLastSavedBranding(branding);
       setLastSavedFlowBehavior(flowBehavior);
-      setLastSavedAccessSecurity(accessSecurity);
+      setLastSavedAccessSecurity(accessSec);
       setLastSavedNotifications(notifications);
-
       markChangesSaved();
       toast.success('Workflow saved successfully');
+      // Reload workflow record for publish diff
+      const { data: workflow } = await supabase
+        .from('workflows')
+        .select('*')
+        .eq('id', params.workflowId)
+        .single();
+      setWorkflowRecord(workflow);
     } catch (error) {
       console.error('Error:', error);
       toast.error('An unexpected error occurred');
     }
-  }, [
-    nodes,
-    edges,
-    params.workflowId,
-    supabase,
-    markChangesSaved,
-    workflowTitle,
-    workflowDescription,
-    workflowStatus,
-    branding,
-    flowBehavior,
-    accessSecurity,
-    notifications
-  ]);
+  }, [nodes, edges, params.workflowId, supabase, markChangesSaved, workflowTitle, workflowDescription, workflowStatus, branding, flowBehavior, accessSecurity, notifications]);
 
   const publishWorkflow = useCallback(async () => {
     try {
-      const { error } = await supabase
-        .from('workflows')
-        .update({
+      let accessSec = accessSecurity;
+      // Hash password if enabled and not already hashed
+      if (accessSec.password_protection?.enabled && accessSec.password_protection.password) {
+        if (!isSHA256(accessSec.password_protection.password)) {
+          accessSec = {
+            ...accessSec,
+            password_protection: {
+              ...accessSec.password_protection,
+              password: await hashString(accessSec.password_protection.password)
+            }
+          };
+        }
+      }
+      // Copy all draft_* columns to published_* columns and set status to 'published'
+      const workflowData = {
+        published_name: workflowTitle || 'Untitled Workflow',
+        published_description: workflowDescription || '',
+        published_status: 'published',
+        published_steps: nodes || [],
+        published_connections: edges || [],
+        published_branding: mergeBranding(branding),
+        published_flow_behavior: flowBehavior || { allow_back_navigation: true, show_progress_indicator: true, save_progress: false, completion_deadline: null },
+        published_access_security: accessSec || { require_verification: false, access_type: 'public', password_protection: { enabled: false, password: '' } },
+        published_notifications: notifications || { on_start: false, on_complete: false, on_step_complete: false },
           status: 'published',
           published_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        })
+      };
+      const { error } = await supabase
+        .from('workflows')
+        .update(workflowData)
         .eq('id', params.workflowId);
-
       if (error) {
         console.error('Error publishing workflow:', error);
         toast.error('Failed to publish workflow');
         return;
       }
-
       setWorkflowStatus('published');
       toast.success('Workflow published successfully');
+      const link = typeof window !== 'undefined' ? `${window.location.origin}/onboard/${params.workflowId}` : '';
+      setPublishLink(link);
+      setShowPublishDialog(true);
+      // Reload workflow record for publish diff
+      const { data: workflow } = await supabase
+        .from('workflows')
+        .select('*')
+        .eq('id', params.workflowId)
+        .single();
+      setWorkflowRecord(workflow);
     } catch (error) {
       console.error('Error:', error);
       toast.error('An unexpected error occurred');
     }
-  }, [params.workflowId, supabase]);
+  }, [params.workflowId, supabase, workflowTitle, workflowDescription, nodes, edges, branding, flowBehavior, accessSecurity, notifications]);
 
   const handleStepSelect = useCallback(async (template: any) => {
     const newNode = {
@@ -479,13 +557,14 @@ export default function WorkflowBuilder() {
       useWorkflowStore.setState({
         nodes: nodesWithNew,
         edges: newEdges,
+        hasUnsavedChanges: true,
       });
 
       // Then update selection in a separate call to ensure nodes are updated first
       setTimeout(() => {
         useWorkflowStore.setState({
           selectedNodeId: newNode.id
-        });
+      });
       }, 0);
     } else {
       // Add to the end (existing behavior)
@@ -509,25 +588,27 @@ export default function WorkflowBuilder() {
             type: 'custom',
             data: { onAdd: () => handleAddClick(edges.indexOf(edge) + 1) }
           })), newEdge],
+          hasUnsavedChanges: true,
         });
 
         // Then update selection in a separate call
         setTimeout(() => {
           useWorkflowStore.setState({
             selectedNodeId: newNode.id
-          });
+        });
         }, 0);
       } else {
         // First update nodes
         useWorkflowStore.setState({
           nodes: [newNode],
+          hasUnsavedChanges: true,
         });
 
         // Then update selection in a separate call
         setTimeout(() => {
           useWorkflowStore.setState({
             selectedNodeId: newNode.id
-          });
+        });
         }, 0);
       }
     }
@@ -592,6 +673,16 @@ export default function WorkflowBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView]);
 
+  const handleBrandingChange = (update: (prev: typeof branding) => typeof branding) => {
+    setBranding(prev => {
+      const newBranding = update(prev);
+      // Deep compare with lastSavedBranding
+      const isEqual = JSON.stringify(newBranding) === JSON.stringify(lastSavedBranding);
+      useWorkflowStore.setState({ hasUnsavedChanges: !isEqual });
+      return newBranding;
+    });
+  };
+
   return (
     <div className="h-screen flex flex-col">
       <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -641,7 +732,7 @@ export default function WorkflowBuilder() {
                   variant={hasUnsavedChanges ? "default" : "outline"} 
                   size="sm" 
                   onClick={saveWorkflow}
-                  className={cn(
+                className={cn(
                     "hover:scale-105 transition-all duration-200",
                     hasUnsavedChanges ? "shadow-[0_0_10px_rgba(0,0,0,0.1)] dark:shadow-[0_0_15px_rgba(255,255,255,0.1)]" : ""
                   )}
@@ -651,27 +742,33 @@ export default function WorkflowBuilder() {
           </Button>
           <Button 
                   variant="outline" 
-                  size="sm" 
+            size="sm" 
                   className="hover:scale-105 transition-all duration-200"
                   onClick={() => handleNavigation(`/workflows/${params.workflowId}/preview`)}
-                >
+          >
                   <Eye className="h-4 w-4 mr-1" />
                   Preview
-                </Button>
-                <Button 
-                  variant={workflowStatus === 'published' ? "outline" : "default"} 
-                  size="sm" 
-            onClick={publishWorkflow} 
-            disabled={workflowStatus === 'published'}
+          </Button>
+                <Button
+                  variant={canPublish ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    if (hasUnsavedChanges) {
+                      setShowPublishNeedsSaveDialog(true);
+                    } else {
+                      publishWorkflow();
+                    }
+                  }}
+                  disabled={!canPublish && !hasUnsavedChanges}
                   className="hover:scale-105 transition-all duration-200"
-          >
+                >
                   <Upload className="h-4 w-4 mr-1" />
                   {workflowStatus === 'published' ? 'Published' : 'Publish'}
-          </Button>
+                </Button>
               </>
             )}
-          </div>
         </div>
+      </div>
       </div>
       <div className="flex justify-center border-b">
         <div className="flex">
@@ -723,531 +820,121 @@ export default function WorkflowBuilder() {
           >
             Style
           </button>
+          <button
+            className={cn(
+              "px-4 py-2 text-sm font-medium transition-colors relative",
+              "hover:text-foreground/80",
+              "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5",
+              "after:transition-colors",
+              activeView === 'share' ? (
+                "text-foreground after:bg-primary"
+              ) : (
+                "text-muted-foreground after:bg-transparent"
+              )
+            )}
+            onClick={() => setActiveView('share')}
+          >
+            Share
+          </button>
         </div>
       </div>
       <div className="flex-1 flex">
-        {activeView === 'builder' ? (
-          <>
-            <div className="flex-1 relative">
-              {nodes.length === 0 ? (
-                <EmptyWorkflowState />
-              ) : (
-      <ReactFlow
-                  onInit={instance => {
-                    flowRef.current = instance;
-                    instance.fitView({ padding: 0.2, includeHiddenNodes: true });
-                  }}
+        {activeView === 'builder' && (
+          <BuilderView
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-                  onNodeClick={handleNodeClick}
-                  onPaneClick={() => setSelectedNodeId(null)}
-        fitView
-        fitViewOptions={{ padding: 0.2, includeHiddenNodes: true }}
-                  className="bg-background"
-        defaultEdgeOptions={{
-          type: 'custom',
-          animated: false,
-          style: { strokeWidth: 2 }
-        }}
-        nodesDraggable={false}
-        preventScrolling={true}
-        connectOnClick={false}
-      >
-        <Background />
-        <Controls />
-        <MiniMap />
-                </ReactFlow>
-              )}
-            </div>
-      {selectedNode && (
-              <div className="w-[350px] border-l bg-background flex flex-col">
-          <div className="flex items-center justify-between p-4 border-b">
-            <div className="font-semibold text-lg">{selectedNode.data?.title || 'Step Settings'}</div>
-            <button onClick={() => setSelectedNodeId(null)} className="text-muted-foreground hover:text-foreground">✕</button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4">
-                  <NodeSettings />
-                </div>
-              </div>
-            )}
-          </>
-        ) : activeView === 'settings' ? (
-          <div className="flex-1 p-4 overflow-y-auto flex justify-center bg-slate-50 dark:bg-slate-900/30">
-            <div className="w-[800px] max-w-full">
-              <div className="flex items-center gap-3 mb-8">
-                <h2 className="text-2xl font-semibold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Workflow Settings</h2>
-                <div className="h-px flex-1 bg-gradient-to-r from-primary/20 to-transparent" />
-              </div>
-              <Accordion 
-                type="single" 
-                collapsible 
-                className="space-y-4"
-                defaultValue="basic"
-              >
-                <AccordionItem 
-                  value="basic" 
-                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
-                >
-                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-md bg-[#1260cc10]">
-                        <Settings className="w-4 h-4 text-[#1260cc]" />
-                      </div>
-                      Basic Settings
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-6 pt-4">
-                    <div className="space-y-6">
-                      <div className="space-y-2">
-                        <Label>Workflow Name</Label>
-                        <Input
-                          value={workflowTitle}
-                          onChange={e => {
-                            const newValue = e.target.value;
-                            setWorkflowTitle(newValue);
-                            if (newValue !== lastSavedWorkflowTitle) {
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            } else {
-                              useWorkflowStore.setState({ hasUnsavedChanges: false });
-                            }
-                          }}
-                          onBlur={() => updateWorkflowTitle(workflowTitle)}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Description</Label>
-                        <Textarea
-                          placeholder="Describe the purpose of this workflow..."
-                          value={workflowDescription}
-                          onChange={e => {
-                            const newValue = e.target.value;
-                            setWorkflowDescription(newValue);
-                            if (newValue !== lastSavedWorkflowDescription) {
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            } else {
-                              useWorkflowStore.setState({ hasUnsavedChanges: false });
-                            }
-                          }}
-                          className="min-h-[100px]"
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Workflow Status</Label>
-                        <RadioGroup
-                          value={workflowStatus}
-                          onValueChange={(value: 'draft' | 'published') => {
-                            if (value !== workflowStatus) {
-                              setWorkflowStatus(value);
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                          className="flex gap-4"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="draft" id="status-draft" />
-                            <Label htmlFor="status-draft">Draft</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="published" id="status-published" />
-                            <Label htmlFor="status-published">Published</Label>
-                          </div>
-                        </RadioGroup>
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem 
-                  value="branding" 
-                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
-                >
-                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-md bg-[#1260cc10]">
-                        <Palette className="w-4 h-4 text-[#1260cc]" />
-                      </div>
-                      Custom Branding
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-6 pt-4">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label>Logo</Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            placeholder="Enter logo URL"
-                            value={branding.logo_url}
-                            onChange={e => {
-                              const newValue = e.target.value;
-                              setBranding(prev => ({ ...prev, logo_url: newValue }));
-                              if (newValue !== lastSavedBranding.logo_url) {
-                                useWorkflowStore.setState({ hasUnsavedChanges: true });
-                              } else {
-                                useWorkflowStore.setState({ hasUnsavedChanges: false });
-                              }
-                            }}
-                          />
-                          <Button variant="outline" size="sm">Upload</Button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Brand Color</Label>
-                        <Input
-                          type="color"
-                          className="h-10"
-                          value={branding.brand_color || '#000000'}
-                          onChange={e => {
-                            const newValue = e.target.value;
-                            setBranding(prev => ({ ...prev, brand_color: newValue }));
-                            if (newValue !== lastSavedBranding.brand_color) {
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            } else {
-                              useWorkflowStore.setState({ hasUnsavedChanges: false });
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Custom Domain</Label>
-                        <Input
-                          placeholder="your-domain.com"
-                          value={branding.custom_domain}
-                          onChange={e => {
-                            const newValue = e.target.value;
-                            setBranding(prev => ({ ...prev, custom_domain: newValue }));
-                            if (newValue !== lastSavedBranding.custom_domain) {
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            } else {
-                              useWorkflowStore.setState({ hasUnsavedChanges: false });
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem 
-                  value="behavior" 
-                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
-                >
-                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-md bg-[#1260cc10]">
-                        <GitBranch className="w-4 h-4 text-[#1260cc]" />
-                      </div>
-                      Flow Behavior
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-6 pt-4">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between py-2 border-t">
-                        <div className="space-y-0.5">
-                          <Label>Allow Back Navigation</Label>
-                          <p className="text-sm text-muted-foreground">Let users revisit earlier steps</p>
-                        </div>
-                        <Switch
-                          checked={flowBehavior.allow_back_navigation}
-                          onCheckedChange={checked => {
-                            if (checked !== flowBehavior.allow_back_navigation) {
-                              setFlowBehavior(prev => ({ ...prev, allow_back_navigation: checked }));
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between py-2 border-t">
-                        <div className="space-y-0.5">
-                          <Label>Progress Indicator</Label>
-                          <p className="text-sm text-muted-foreground">Show completion progress</p>
-                        </div>
-                        <Switch
-                          checked={flowBehavior.show_progress_indicator}
-                          onCheckedChange={checked => {
-                            if (checked !== flowBehavior.show_progress_indicator) {
-                              setFlowBehavior(prev => ({ ...prev, show_progress_indicator: checked }));
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between py-2 border-t">
-                        <div className="space-y-0.5">
-                          <Label>Save Progress</Label>
-                          <p className="text-sm text-muted-foreground">Allow users to save and resume later</p>
-                        </div>
-                        <Switch
-                          checked={flowBehavior.save_progress}
-                          onCheckedChange={checked => {
-                            if (checked !== flowBehavior.save_progress) {
-                              setFlowBehavior(prev => ({ ...prev, save_progress: checked }));
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="space-y-2 py-2 border-t">
-                        <Label>Completion Deadline</Label>
-                        <p className="text-sm text-muted-foreground mb-2">Set a deadline for workflow completion</p>
-                        <Input
-                          type="datetime-local"
-                          value={flowBehavior.completion_deadline || ''}
-                          onChange={e => {
-                            const newValue = e.target.value;
-                            setFlowBehavior(prev => ({ ...prev, completion_deadline: newValue }));
-                            if (newValue !== flowBehavior.completion_deadline) {
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem 
-                  value="security" 
-                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
-                >
-                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-md bg-[#1260cc10]">
-                        <Shield className="w-4 h-4 text-[#1260cc]" />
-                      </div>
-                      Access & Security
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-6 pt-4">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between py-2 border-t">
-                        <div className="space-y-0.5">
-                          <Label>Require Login or Email Verification</Label>
-                          <p className="text-sm text-muted-foreground">Users must verify their identity</p>
-                        </div>
-                        <Switch
-                          checked={accessSecurity.require_verification}
-                          onCheckedChange={checked => {
-                            if (checked !== accessSecurity.require_verification) {
-                              setAccessSecurity(prev => ({ ...prev, require_verification: checked }));
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="space-y-2 py-2 border-t">
-                        <Label>Limit Access To</Label>
-                        <Select
-                          value={accessSecurity.access_type}
-                          onValueChange={value => {
-                            if (value !== accessSecurity.access_type) {
-                              setAccessSecurity(prev => ({ ...prev, access_type: value }));
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="public">Anyone with the link</SelectItem>
-                            <SelectItem value="invite_only">Invited users only</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="py-2 border-t">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="space-y-0.5">
-                            <Label>Password Protection</Label>
-                            <p className="text-sm text-muted-foreground">Require a password to access</p>
-                          </div>
-                          <Switch
-                            checked={accessSecurity.password_protection.enabled}
-                            onCheckedChange={checked => {
-                              if (checked !== accessSecurity.password_protection.enabled) {
-                                setAccessSecurity(prev => ({
-                                  ...prev,
-                                  password_protection: {
-                                    ...prev.password_protection,
-                                    enabled: checked
-                                  }
-                                }));
-                                useWorkflowStore.setState({ hasUnsavedChanges: true });
-                              }
-                            }}
-                          />
-                        </div>
-                        {accessSecurity.password_protection.enabled && (
-                          <Input
-                            type="password"
-                            placeholder="Enter password"
-                            value={accessSecurity.password_protection.password}
-                            onChange={e => {
-                              const newValue = e.target.value;
-                              setAccessSecurity(prev => ({
-                                ...prev,
-                                password_protection: {
-                                  ...prev.password_protection,
-                                  password: newValue
-                                }
-                              }));
-                              if (newValue !== accessSecurity.password_protection.password) {
-                                useWorkflowStore.setState({ hasUnsavedChanges: true });
-                              }
-                            }}
-                            className="mt-2"
-                          />
-                        )}
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem 
-                  value="notifications" 
-                  className="border-0 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-md hover:shadow-lg transition-shadow"
-                >
-                  <AccordionTrigger className="px-6 text-base font-medium hover:no-underline hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-md bg-[#1260cc10]">
-                        <Bell className="w-4 h-4 text-[#1260cc]" />
-                      </div>
-                      Notifications
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="px-6 pt-4">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between py-2 border-t">
-                        <div className="space-y-0.5">
-                          <Label>On Workflow Start</Label>
-                          <p className="text-sm text-muted-foreground">Send email when workflow starts</p>
-                        </div>
-                        <Switch
-                          checked={notifications.on_start}
-                          onCheckedChange={checked => {
-                            if (checked !== notifications.on_start) {
-                              setNotifications(prev => ({ ...prev, on_start: checked }));
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between py-2 border-t">
-                        <div className="space-y-0.5">
-                          <Label>On Workflow Complete</Label>
-                          <p className="text-sm text-muted-foreground">Send email when workflow is completed</p>
-                        </div>
-                        <Switch
-                          checked={notifications.on_complete}
-                          onCheckedChange={checked => {
-                            if (checked !== notifications.on_complete) {
-                              setNotifications(prev => ({ ...prev, on_complete: checked }));
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between py-2 border-t">
-                        <div className="space-y-0.5">
-                          <Label>On Step Complete</Label>
-                          <p className="text-sm text-muted-foreground">Send email when any step is completed</p>
-                        </div>
-                        <Switch
-                          checked={notifications.on_step_complete}
-                          onCheckedChange={checked => {
-                            if (checked !== notifications.on_step_complete) {
-                              setNotifications(prev => ({ ...prev, on_step_complete: checked }));
-                              useWorkflowStore.setState({ hasUnsavedChanges: true });
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 p-4 overflow-y-auto flex justify-center bg-slate-50 dark:bg-slate-900/30">
-            <div className="w-[800px] max-w-full">
-              <div className="flex items-center gap-3 mb-8">
-                <h2 className="text-2xl font-semibold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Workflow Style</h2>
-                <div className="h-px flex-1 bg-gradient-to-r from-primary/20 to-transparent" />
-              </div>
-              {/* Style content will be added later */}
-            </div>
-          </div>
+            flowRef={flowRef}
+            handleNodeClick={handleNodeClick}
+            setSelectedNodeId={setSelectedNodeId}
+            selectedNode={selectedNode}
+            handleAddClick={handleAddClick}
+          />
         )}
-        </div>
-      {showStepPicker && (
-        <Dialog open={showStepPicker} onOpenChange={(open) => !open && setShowStepPicker(false)}>
-          <DialogContent className="sm:max-w-[500px]">
-            <StepPicker
-              onStepSelect={(template) => {
-                handleStepSelect(template);
-                setShowStepPicker(false);
-                setInsertIndex(null);
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
-      <Dialog open={showUnsavedChangesDialog} onOpenChange={setShowUnsavedChangesDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Unsaved Changes</DialogTitle>
-            <DialogDescription>
-              You have unsaved changes. Are you sure you want to leave? Your changes will be lost.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-3 mt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowUnsavedChangesDialog(false);
-                setPendingNavigation(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (pendingNavigation) {
-                  router.push(pendingNavigation);
-                }
-              }}
-            >
-              Leave Without Saving
-            </Button>
-            <Button
-              onClick={async () => {
-                await saveWorkflow();
-                if (pendingNavigation) {
-                  router.push(pendingNavigation);
-                }
-              }}
-            >
-              Save & Leave
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        {activeView === 'settings' && (
+          <SettingsView
+            workflowTitle={workflowTitle}
+            setWorkflowTitle={setWorkflowTitle}
+            lastSavedWorkflowTitle={lastSavedWorkflowTitle}
+            updateWorkflowTitle={updateWorkflowTitle}
+            workflowDescription={workflowDescription}
+            setWorkflowDescription={setWorkflowDescription}
+            lastSavedWorkflowDescription={lastSavedWorkflowDescription}
+            workflowStatus={workflowStatus}
+            setWorkflowStatus={setWorkflowStatus}
+            lastSavedWorkflowStatus={lastSavedWorkflowStatus}
+            branding={branding}
+            setBranding={setBranding}
+            lastSavedBranding={lastSavedBranding}
+            flowBehavior={flowBehavior}
+            setFlowBehavior={setFlowBehavior}
+            lastSavedFlowBehavior={lastSavedFlowBehavior}
+            accessSecurity={accessSecurity}
+            setAccessSecurity={setAccessSecurity}
+            lastSavedAccessSecurity={lastSavedAccessSecurity}
+            notifications={notifications}
+            setNotifications={setNotifications}
+            lastSavedNotifications={lastSavedNotifications}
+            useWorkflowStore={useWorkflowStore}
+            handleBrandingChange={handleBrandingChange}
+            defaultBranding={defaultBranding}
+            params={params}
+            createClient={createClient}
+            toast={toast}
+            FileUpload={FileUpload}
+            ColorField={ColorField}
+            Label={Label}
+            Input={Input}
+            Textarea={Textarea}
+            RadioGroup={RadioGroup}
+            RadioGroupItem={RadioGroupItem}
+            Switch={Switch}
+            Select={Select}
+            SelectTrigger={SelectTrigger}
+            SelectValue={SelectValue}
+            SelectContent={SelectContent}
+            SelectItem={SelectItem}
+            Accordion={Accordion}
+            AccordionItem={AccordionItem}
+            AccordionTrigger={AccordionTrigger}
+            AccordionContent={AccordionContent}
+            Settings={Settings}
+            Palette={Palette}
+            GitBranch={GitBranch}
+            Shield={Shield}
+            Bell={Bell}
+            Image={Image}
+            cn={cn}
+          />
+        )}
+        {activeView === 'style' && (
+          <StyleView
+            branding={branding}
+            handleBrandingChange={handleBrandingChange}
+            defaultBranding={defaultBranding}
+            nodes={nodes}
+            FileUpload={FileUpload}
+            ColorField={ColorField}
+            Image={Image}
+            StepRenderer={StepRenderer}
+            Accordion={Accordion}
+            AccordionItem={AccordionItem}
+            AccordionTrigger={AccordionTrigger}
+            AccordionContent={AccordionContent}
+            params={params}
+            toast={toast}
+          />
+        )}
+        {activeView === 'share' && (
+          <ShareView
+            workflowStatus={workflowStatus}
+            publishLink={publishLink}
+          />
+        )}
+      </div>
     </div>
   );
 } 

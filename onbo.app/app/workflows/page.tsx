@@ -47,6 +47,7 @@ interface Workflow {
   updated_at: string
   steps: any[]
   connections: any[]
+  draft_steps?: any[]
 }
 
 interface WorkflowCardProps {
@@ -69,6 +70,8 @@ function WorkflowCard({ workflow, onDelete }: WorkflowCardProps) {
     }
     router.push(`/workflows/${workflow.id}`)
   }
+
+  const stepCount = workflow.draft_steps ? workflow.draft_steps.length : (workflow.steps ? workflow.steps.length : 0);
 
   return (
     <>
@@ -111,7 +114,7 @@ function WorkflowCard({ workflow, onDelete }: WorkflowCardProps) {
         </CardHeader>
         <CardContent>
           <div className="text-sm text-muted-foreground">
-            <p>{workflow.steps.length} tasks • Last updated {new Date(workflow.updated_at).toLocaleDateString()}</p>
+            <p>{stepCount} tasks • Last updated {new Date(workflow.updated_at).toLocaleDateString()}</p>
           </div>
         </CardContent>
       </Card>

@@ -99,12 +99,16 @@ export const FileUpload = React.forwardRef<HTMLInputElement, FileUploadProps>(
       setFiles((prev) => allowMultiple ? [...prev, ...newFiles] : newFiles)
       newFiles.forEach((f) => simulateUpload(f.id))
       // Call onChange with a FileList
-      if (onChange) {
-        const dataTransfer = new DataTransfer()
-        (allowMultiple ? [...(value ? Array.from(value) : []), ...filteredFiles] : filteredFiles).forEach((file: File) => {
-          dataTransfer.items.add(file)
-        })
-        onChange(dataTransfer.files.length ? dataTransfer.files : null)
+      if (typeof onChange === 'function') {
+        const dataTransfer = new DataTransfer();
+        const filesToAdd = allowMultiple
+          ? [...(value ? Array.from(value) : []), ...filteredFiles]
+          : filteredFiles;
+        filesToAdd.forEach((file: File) => {
+          dataTransfer.items.add(file);
+        });
+        const resultFiles = dataTransfer.files.length ? dataTransfer.files : null;
+        onChange(resultFiles);
       }
     }
 
@@ -152,7 +156,7 @@ export const FileUpload = React.forwardRef<HTMLInputElement, FileUploadProps>(
 
     const removeFile = (id: string) => {
       setFiles((prev) => prev.filter((f) => f.id !== id))
-      if (onChange && value) {
+      if (typeof onChange === 'function' && value) {
         const filesArr = Array.from(value).filter((file: File) => `${URL.createObjectURL(file)}-${file.lastModified}` !== id)
         const dataTransfer = new DataTransfer()
         filesArr.forEach((file: File) => dataTransfer.items.add(file))
@@ -162,7 +166,7 @@ export const FileUpload = React.forwardRef<HTMLInputElement, FileUploadProps>(
 
     const clearAll = () => {
       setFiles([])
-      if (onChange) onChange(null)
+      if (typeof onChange === 'function') onChange(null)
     }
 
     return (
@@ -224,20 +228,20 @@ export const FileUpload = React.forwardRef<HTMLInputElement, FileUploadProps>(
                   ? "Drop files here"
                   : files.length
                   ? "Add more files"
-                  : "Upload your files"}
+                  : "Upload your logo"}
               </h3>
               <p className="text-zinc-600 dark:text-zinc-300 md:text-lg max-w-md mx-auto">
                 {isDragging ? (
                   <span className="font-medium text-blue-500">Release to upload</span>
                 ) : (
                   <>
-                    Drag & drop files here, or {" "}
+                    Drag & drop here, or {" "}
                     <span className="text-blue-500 font-medium">browse</span>
                   </>
                 )}
               </p>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Supports images, documents, videos, and more
+                Supports PNG and JPEG
               </p>
             </div>
 
